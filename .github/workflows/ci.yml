@@ -40,7 +40,7 @@ jobs:
           docker build --file Dockerfile --tag mcpjungle:http-ci .
           docker build --file stdio.Dockerfile --tag mcpjungle:stdio-ci .
       - name: Scan HTTP container
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: mcpjungle:http-ci
           format: table
@@ -48,7 +48,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: false
       - name: Scan STDIO container
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: mcpjungle:stdio-ci
           format: table
