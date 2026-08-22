@@ -1,0 +1,7 @@
+.git
+docs
+**/node_modules
+web/dashboard/dist
+internal/dashboardui/dist
+*.db
+/mcpjungle

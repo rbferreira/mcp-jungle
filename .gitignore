@@ -1,0 +1,11 @@
+# Build artifacts
+/mcpjungle
+*.db
+web/dashboard/node_modules/
+web/dashboard/dist/
+internal/dashboardui/dist/
+
+# Local environment
+.env
+.env.*
+.DS_Store
