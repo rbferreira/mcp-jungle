@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mcpjungle/mcpjungle/internal/model"
+	"github.com/mcpjungle/mcpjungle/internal/security"
 	"github.com/mcpjungle/mcpjungle/pkg/apierrors"
 	"github.com/mcpjungle/mcpjungle/pkg/testhelpers"
 )
@@ -162,7 +163,7 @@ func TestGetClientByToken(t *testing.T) {
 	testhelpers.AssertEqual(t, client.ID, retrievedClient.ID)
 	testhelpers.AssertEqual(t, client.Name, retrievedClient.Name)
 	testhelpers.AssertEqual(t, client.Description, retrievedClient.Description)
-	testhelpers.AssertEqual(t, client.AccessToken, retrievedClient.AccessToken)
+	testhelpers.AssertEqual(t, "", retrievedClient.AccessToken)
 }
 
 func TestGetClientByTokenNotFound(t *testing.T) {
@@ -324,7 +325,7 @@ func TestUpdateClientAccessToken(t *testing.T) {
 	err = setup.DB.Where("name = ?", "test-client").First(&savedClient).Error
 	testhelpers.AssertNoError(t, err)
 	testhelpers.AssertEqual(t, "test-client", savedClient.Name)
-	testhelpers.AssertEqual(t, "new-access-token", savedClient.AccessToken)
+	testhelpers.AssertEqual(t, security.HashToken("new-access-token"), savedClient.AccessToken)
 }
 
 func TestUpdateClientInvalidAccessToken(t *testing.T) {

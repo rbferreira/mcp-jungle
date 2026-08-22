@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/mcpjungle/mcpjungle/internal/security"
 	"github.com/mcpjungle/mcpjungle/pkg/types"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+type encryptedConfigEnvelope struct {
+	Encrypted string `json:"_encrypted"`
+}
 
 type StreamableHTTPConfig struct {
 	// URL must be a valid http/https URL.
@@ -58,6 +63,39 @@ type McpServer struct {
 	// "stateless" (default): Creates a new connection for each tool call.
 	// "stateful": Maintains a persistent connection across tool calls.
 	SessionMode types.SessionMode `json:"session_mode" gorm:"type:varchar(20);default:'stateless'"`
+}
+
+func (s *McpServer) BeforeSave(_ *gorm.DB) error {
+	if !security.EncryptionEnabled() || len(s.Config) == 0 {
+		return nil
+	}
+	var envelope encryptedConfigEnvelope
+	if json.Unmarshal(s.Config, &envelope) == nil && security.IsEncrypted(envelope.Encrypted) {
+		return nil
+	}
+	encrypted, err := security.EncryptString(string(s.Config))
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(encryptedConfigEnvelope{Encrypted: encrypted})
+	if err != nil {
+		return err
+	}
+	s.Config = encoded
+	return nil
+}
+
+func (s *McpServer) AfterFind(_ *gorm.DB) error {
+	var envelope encryptedConfigEnvelope
+	if json.Unmarshal(s.Config, &envelope) != nil || envelope.Encrypted == "" {
+		return nil
+	}
+	decrypted, err := security.DecryptString(envelope.Encrypted)
+	if err != nil {
+		return err
+	}
+	s.Config = []byte(decrypted)
+	return nil
 }
 
 // NewStreamableHTTPServer creates a new MCP server with streamable HTTP transport configuration.

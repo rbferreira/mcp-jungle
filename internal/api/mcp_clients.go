@@ -76,3 +76,14 @@ func (s *Server) updateMcpClientHandler() gin.HandlerFunc {
 		c.JSON(http.StatusOK, resp)
 	}
 }
+
+func (s *Server) rotateMcpClientTokenHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		client, err := s.mcpClientService.RotateClientToken(c.Param("name"))
+		if err != nil {
+			handleServiceError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"name": client.Name, "access_token": client.AccessToken})
+	}
+}

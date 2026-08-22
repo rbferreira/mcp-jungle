@@ -7,6 +7,7 @@ import (
 
 	"github.com/mcpjungle/mcpjungle/internal"
 	"github.com/mcpjungle/mcpjungle/internal/model"
+	"github.com/mcpjungle/mcpjungle/internal/security"
 	"github.com/mcpjungle/mcpjungle/pkg/apierrors"
 	"github.com/mcpjungle/mcpjungle/pkg/types"
 	"gorm.io/gorm"
@@ -30,11 +31,12 @@ func (u *UserService) CreateAdminUser() (*model.User, error) {
 	user := model.User{
 		Username:    "admin",
 		Role:        types.UserRoleAdmin,
-		AccessToken: token,
+		AccessToken: security.HashToken(token),
 	}
 	if err := u.db.Create(&user).Error; err != nil {
 		return nil, fmt.Errorf("failed to create admin user: %w", err)
 	}
+	user.AccessToken = token
 	return &user, nil
 }
 
@@ -42,12 +44,13 @@ func (u *UserService) CreateAdminUser() (*model.User, error) {
 // If no user is found, an error is returned.
 func (u *UserService) GetUserByAccessToken(token string) (*model.User, error) {
 	var user model.User
-	if err := u.db.Where("access_token = ?", token).First(&user).Error; err != nil {
+	if err := u.db.Where("access_token IN ?", []string{security.HashToken(token), token}).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("user not found: %w", apierrors.ErrNotFound)
 		}
 		return nil, fmt.Errorf("failed to verify token: %w", err)
 	}
+	user.AccessToken = ""
 	return &user, nil
 }
 
@@ -64,17 +67,19 @@ func (u *UserService) CreateUser(input *model.User) (*model.User, error) {
 		if err != nil {
 			return nil, err
 		}
-		user.AccessToken = token
+		user.AccessToken = security.HashToken(token)
+		input.AccessToken = token
 	} else {
 		// validate the user-provided custom access token
 		if err := internal.ValidateAccessToken(input.AccessToken); err != nil {
 			return nil, fmt.Errorf("invalid access token: %v: %w", err, apierrors.ErrInvalidInput)
 		}
-		user.AccessToken = input.AccessToken
+		user.AccessToken = security.HashToken(input.AccessToken)
 	}
 	if err := u.db.Create(&user).Error; err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
+	user.AccessToken = input.AccessToken
 	return &user, nil
 }
 
@@ -97,12 +102,14 @@ func (u *UserService) UpdateUser(input *model.User) (*model.User, error) {
 	if err := internal.ValidateAccessToken(input.AccessToken); err != nil {
 		return nil, fmt.Errorf("invalid access token: %v: %w", err, apierrors.ErrInvalidInput)
 	}
-	user.AccessToken = input.AccessToken
+	rawToken := input.AccessToken
+	user.AccessToken = security.HashToken(rawToken)
 
 	err = u.db.Save(&user).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
+	user.AccessToken = rawToken
 	return &user, nil
 }
 
@@ -111,6 +118,9 @@ func (u *UserService) ListUsers() ([]model.User, error) {
 	var users []model.User
 	if err := u.db.Find(&users).Error; err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+	for i := range users {
+		users[i].AccessToken = ""
 	}
 	return users, nil
 }

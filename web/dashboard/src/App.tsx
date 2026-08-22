@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import type {
   AppSection,
   DashboardCreateToolGroupInput,
+  DashboardConnectionsResponse,
   DashboardDiagnosticsResponse,
   DashboardOAuthAuthorizationRequired,
   DashboardOverviewResponse,
@@ -45,6 +46,7 @@ type FeedbackTone = "success" | "error";
 
 interface DashboardData {
   overview?: DashboardOverviewResponse;
+  connections?: DashboardConnectionsResponse;
   servers?: DashboardServersResponse;
   tools?: DashboardToolsResponse;
   toolGroups?: DashboardToolGroupsResponse;
@@ -102,6 +104,10 @@ const sectionMeta: Record<AppSection, { title: string; subtitle: string }> = {
   servers: {
     title: "Servers",
     subtitle: "",
+  },
+  connections: {
+    title: "Connections",
+    subtitle: "Manage local tokens and hosted OAuth connector access.",
   },
   tools: {
     title: "Tools",
@@ -477,6 +483,7 @@ export default function App() {
   const [toolGroupForm, setToolGroupForm] = useState<ToolGroupFormState>(createInitialToolGroupForm());
   const [toolGroupError, setToolGroupError] = useState("");
   const [busyKeys, setBusyKeys] = useState<Record<string, boolean>>({});
+  const [issuedToken, setIssuedToken] = useState<{ name: string; token: string } | null>(null);
 
   async function loadDashboardData(silent = false) {
     if (!silent) {
@@ -484,16 +491,17 @@ export default function App() {
     }
     setErrorMessage("");
     try {
-      const [overview, servers, tools, toolGroups, prompts, resources, diagnostics] = await Promise.all([
+      const [overview, servers, connections, tools, toolGroups, prompts, resources, diagnostics] = await Promise.all([
         api.overview(),
         api.servers(),
+        api.connections(),
         api.tools(),
         api.toolGroups(),
         api.prompts(),
         api.resources(),
         api.diagnostics(),
       ]);
-      setData({ overview, servers, tools, toolGroups, prompts, resources, diagnostics });
+      setData({ overview, servers, connections, tools, toolGroups, prompts, resources, diagnostics });
       setExpandedTool((current) =>
         current && tools.tools.some((tool) => tool.canonical_name === current) ? current : null,
       );
@@ -922,9 +930,57 @@ export default function App() {
     }
   }
 
+  async function createStaticConnection() {
+    const name = window.prompt("Connection name");
+    if (!name?.trim()) return;
+    const allowed = window.prompt("Allowed MCP server names, separated by commas. Use * for all servers.", "*");
+    if (allowed === null) return;
+    const allowList = allowed.split(",").map((value) => value.trim()).filter(Boolean);
+    setBusy("connection-create", true);
+    try {
+      const result = await api.createStaticConnection({ name: name.trim(), allow_list: allowList });
+      setIssuedToken({ name: result.name, token: result.access_token });
+      await loadDashboardData(true);
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Request failed" });
+    } finally {
+      setBusy("connection-create", false);
+    }
+  }
+
+  async function rotateStaticConnection(name: string) {
+    if (!window.confirm(`Rotate the token for "${name}"? The old token will stop working immediately.`)) return;
+    const result = await api.rotateStaticConnection(name);
+    setIssuedToken({ name: result.name, token: result.access_token });
+    await loadDashboardData(true);
+  }
+
+  async function deleteStaticConnection(name: string) {
+    if (!window.confirm(`Revoke and delete "${name}"?`)) return;
+    await api.deleteStaticConnection(name);
+    await loadDashboardData(true);
+  }
+
+  async function revokeHostedConnection(clientID: string) {
+    if (!window.confirm("Revoke this hosted OAuth connector? It must be reconnected to regain access.")) return;
+    await api.revokeHostedConnection(clientID);
+    await loadDashboardData(true);
+  }
+
+  async function logout() {
+    const csrf = document.cookie.split("; ").find((row) => row.startsWith("mcpjungle_csrf="))?.split("=")[1] ?? "";
+    const response = await fetch("/auth/logout", { method: "POST", headers: { "X-CSRF-Token": decodeURIComponent(csrf) } });
+    if (!response.ok) {
+      window.location.assign("/auth/login");
+      return;
+    }
+    const payload = (await response.json()) as { logout_url?: string };
+    window.location.assign(payload.logout_url ?? "/auth/login");
+  }
+
   return (
     <div className="app-shell">
-      <NavSidebar active={section} logoUrl={logoUrl} onSelect={setSection} />
+      <NavSidebar active={section} logoUrl={logoUrl} onLogout={() => void logout()} onSelect={setSection} showLogout={overview?.mode === "enterprise"} />
       <main className="main-shell">
         <header className="topbar">
           <div>
@@ -1346,6 +1402,62 @@ export default function App() {
                   </div>
                 )}
               </SectionCard>
+            ) : null}
+
+            {section === "connections" && data.connections ? (
+              <div className="section-stack">
+                {issuedToken ? (
+                  <SectionCard title="New token — copy it now" subtitle="This token will not be shown again.">
+                    <div className="tool-group-endpoint-value">
+                      <code className="detail-target-code">{issuedToken.token}</code>
+                      <CopyButton ariaLabel="Copy access token" title="Copy access token" value={issuedToken.token} />
+                      <button className="secondary-action" onClick={() => setIssuedToken(null)} type="button">Dismiss</button>
+                    </div>
+                  </SectionCard>
+                ) : null}
+                <SectionCard
+                  title="Static clients"
+                  subtitle="For local desktop and IDE clients. Tokens are shown only once."
+                  action={<button className="primary-action" disabled={isBusy("connection-create")} onClick={() => void createStaticConnection()} type="button">+ Add Connection</button>}
+                >
+                  <div className="tools-table-wrap">
+                    <table className="data-table compact-table">
+                      <thead><tr><th>Name</th><th>Allowed servers</th><th>Last used</th><th>Actions</th></tr></thead>
+                      <tbody>
+                        {data.connections.static_connections.map((connection) => (
+                          <tr key={connection.name}>
+                            <td><strong>{connection.name}</strong></td>
+                            <td><code>{connection.allow_list.join(", ") || "none"}</code></td>
+                            <td>{connection.last_seen_at ? new Date(connection.last_seen_at).toLocaleString() : "Never"}</td>
+                            <td><div className="row-actions">
+                              <button className="secondary-action" onClick={() => void rotateStaticConnection(connection.name)} type="button">Rotate</button>
+                              <button className="danger-action" onClick={() => void deleteStaticConnection(connection.name)} type="button">Revoke</button>
+                            </div></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </SectionCard>
+                <SectionCard title="Hosted OAuth clients" subtitle="ChatGPT and Claude clients bind to the first tool group endpoint they access.">
+                  <div className="tools-table-wrap">
+                    <table className="data-table compact-table">
+                      <thead><tr><th>Client ID</th><th>Tool group</th><th>Endpoint</th><th>Status</th><th>Actions</th></tr></thead>
+                      <tbody>
+                        {data.connections.hosted_connections.map((connection) => (
+                          <tr key={connection.client_id}>
+                            <td><code>{connection.client_id}</code></td>
+                            <td>{connection.tool_group}</td>
+                            <td><div className="tool-group-endpoint-value"><code>{connection.endpoint}</code><CopyButton ariaLabel="Copy connector endpoint" title="Copy connector endpoint" value={connection.endpoint} /></div></td>
+                            <td>{connection.revoked_at ? <StatusBadge text="Revoked" tone="muted" /> : <StatusBadge text="Active" tone="good" />}</td>
+                            <td><button className="danger-action" disabled={Boolean(connection.revoked_at)} onClick={() => void revokeHostedConnection(connection.client_id)} type="button">Revoke</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </SectionCard>
+              </div>
             ) : null}
 
             {section === "tool_groups" && data.toolGroups ? (

@@ -10,7 +10,7 @@ import (
 func (s *Server) dashboardOverviewHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		mode := c.MustGet("mode").(model.ServerMode)
-		resp, err := s.dashboardService.Overview(mode, requestBaseURL(c))
+		resp, err := s.dashboardService.Overview(mode, s.requestBaseURL(c))
 		if err != nil {
 			handleServiceError(c, err)
 			return
@@ -66,7 +66,7 @@ func (s *Server) dashboardResourcesHandler() gin.HandlerFunc {
 func (s *Server) dashboardDiagnosticsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		mode := c.MustGet("mode").(model.ServerMode)
-		resp, err := s.dashboardService.Diagnostics(mode, requestBaseURL(c))
+		resp, err := s.dashboardService.Diagnostics(mode, s.requestBaseURL(c))
 		if err != nil {
 			handleServiceError(c, err)
 			return
@@ -75,7 +75,10 @@ func (s *Server) dashboardDiagnosticsHandler() gin.HandlerFunc {
 	}
 }
 
-func requestBaseURL(c *gin.Context) string {
+func (s *Server) requestBaseURL(c *gin.Context) string {
+	if s.publicURL != "" {
+		return s.publicURL
+	}
 	scheme := "http"
 	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 		scheme = "https"

@@ -6,14 +6,14 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@repo-assets": path.resolve(__dirname, "../../assets"),
+      "@": path.resolve(import.meta.dirname, "./src"),
+      "@repo-assets": path.resolve(import.meta.dirname, "../../assets"),
     },
   },
   server: {
     port: 5173,
     fs: {
-      allow: [path.resolve(__dirname, "../..")],
+      allow: [path.resolve(import.meta.dirname, "../..")],
     },
     proxy: {
       "/api": "http://localhost:8080",

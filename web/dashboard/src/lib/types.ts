@@ -1,10 +1,36 @@
 export type AppSection =
   | "servers"
+  | "connections"
   | "tools"
   | "tool_groups"
   | "prompts"
   | "resources"
   | "diagnostics";
+
+export interface DashboardStaticConnection {
+  name: string;
+  description: string;
+  allow_list: string[];
+  last_seen_at?: string;
+}
+
+export interface DashboardHostedConnection {
+  client_id: string;
+  tool_group: string;
+  endpoint: string;
+  last_seen_at?: string;
+  revoked_at?: string;
+}
+
+export interface DashboardConnectionsResponse {
+  static_connections: DashboardStaticConnection[];
+  hosted_connections: DashboardHostedConnection[];
+}
+
+export interface DashboardIssuedToken {
+  name: string;
+  access_token: string;
+}
 
 export interface DashboardEmptyState {
   title: string;

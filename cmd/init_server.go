@@ -3,10 +3,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/mcpjungle/mcpjungle/cmd/config"
 	"github.com/spf13/cobra"
 )
+
+var initServerBootstrapToken string
 
 var initServerCmd = &cobra.Command{
 	Use:   "init-server",
@@ -21,12 +24,20 @@ var initServerCmd = &cobra.Command{
 }
 
 func init() {
+	initServerCmd.Flags().StringVar(&initServerBootstrapToken, "bootstrap-token", "", "one-time enterprise bootstrap token (or MCPJUNGLE_BOOTSTRAP_TOKEN)")
 	rootCmd.AddCommand(initServerCmd)
 }
 
 func runInitServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("Initializing the MCPJungle Server in Enterprise Mode...")
-	resp, err := apiClient.InitServer()
+	bootstrapToken := initServerBootstrapToken
+	if bootstrapToken == "" {
+		bootstrapToken = os.Getenv("MCPJUNGLE_BOOTSTRAP_TOKEN")
+	}
+	if bootstrapToken == "" {
+		return errors.New("bootstrap token is required; use --bootstrap-token or MCPJUNGLE_BOOTSTRAP_TOKEN")
+	}
+	resp, err := apiClient.InitServerWithBootstrapToken(bootstrapToken)
 	if err != nil {
 		return fmt.Errorf("failed to initialize the server: %w", err)
 	}

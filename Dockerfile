@@ -4,7 +4,7 @@
 # build context (needed for source-based builders like DigitalOcean App Platform).
 
 # ---- Stage 1: dashboard (React + Vite) ----
-FROM node:20-alpine AS dashboard
+FROM node:22-alpine AS dashboard
 WORKDIR /src/web/dashboard
 COPY web/dashboard/package.json web/dashboard/package-lock.json ./
 RUN npm ci
@@ -14,7 +14,7 @@ COPY web/dashboard/ ./
 RUN npm run build
 
 # ---- Stage 2: server (Go) ----
-FROM golang:1.25-alpine AS builder
+FROM golang:1.25.13-alpine AS builder
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -o /out/mcpjungle .
 
 # ---- Stage 3: runtime ----
-FROM gcr.io/distroless/base
+FROM gcr.io/distroless/static-debian13:nonroot
 
 # OCI image labels
 LABEL org.opencontainers.image.source="https://github.com/mcpjungle/mcpjungle"
@@ -36,6 +36,8 @@ LABEL org.opencontainers.image.title="MCPJungle"
 LABEL org.opencontainers.image.vendor="mcpjungle"
 
 COPY --from=builder /out/mcpjungle /mcpjungle
+
+WORKDIR /tmp
 
 EXPOSE 8080
 ENTRYPOINT ["/mcpjungle"]

@@ -1,0 +1,65 @@
+name: Deploy staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested commit image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: stdio.Dockerfile
+          push: true
+          tags: ghcr.io/luckiertrout/mcp-jungle:${{ github.event.workflow_run.head_sha }}
+      - name: Deploy exact CI commit
+        id: deploy
+        uses: digitalocean/app_action/deploy@v2
+        env:
+          MCPJUNGLE_ENCRYPTION_KEY: ${{ secrets.MCPJUNGLE_ENCRYPTION_KEY }}
+          MCPJUNGLE_BOOTSTRAP_TOKEN: ${{ secrets.MCPJUNGLE_BOOTSTRAP_TOKEN }}
+          MCPJUNGLE_AUTH0_ISSUER: ${{ secrets.MCPJUNGLE_AUTH0_ISSUER }}
+          MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID: ${{ secrets.MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID }}
+          MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET: ${{ secrets.MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET }}
+          MCPJUNGLE_AUTH0_ADMIN_SUBJECT: ${{ secrets.MCPJUNGLE_AUTH0_ADMIN_SUBJECT }}
+          MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID: ${{ secrets.MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID }}
+          MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET: ${{ secrets.MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_spec_location: .do/staging.yaml
+          project_id: ${{ vars.DIGITALOCEAN_PROJECT_ID }}
+          print_build_logs: "true"
+          print_deploy_logs: "true"
+      - name: Require initialized readiness
+        env:
+          LIVE_URL: ${{ fromJson(steps.deploy.outputs.app).live_url }}
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error "$LIVE_URL/ready" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Deployment is live but not initialized or ready. Run mcpjungle init-server, then rerun this workflow." >&2
+          exit 1

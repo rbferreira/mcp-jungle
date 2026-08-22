@@ -65,6 +65,7 @@
             "group": "Deploy and Operate",
             "pages": [
               "deployment/docker",
+              "deployment/digitalocean",
               "deployment/production",
               "deployment/database",
               "deployment/observability"

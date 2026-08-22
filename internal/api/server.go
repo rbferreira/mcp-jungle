@@ -3,7 +3,9 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/mcpjungle/mcpjungle/internal/dashboardui"
 	"github.com/mcpjungle/mcpjungle/internal/model"
+	"github.com/mcpjungle/mcpjungle/internal/service/authn"
 	"github.com/mcpjungle/mcpjungle/internal/service/config"
 	"github.com/mcpjungle/mcpjungle/internal/service/dashboard"
 	"github.com/mcpjungle/mcpjungle/internal/service/mcp"
@@ -22,6 +25,7 @@ import (
 	"github.com/mcpjungle/mcpjungle/pkg/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"gorm.io/gorm"
 )
 
 const (
@@ -46,6 +50,11 @@ type ServerOptions struct {
 	UserService      *user.UserService
 	ToolGroupService *toolgroup.ToolGroupService
 	DashboardService *dashboard.Service
+	AuthService      *authn.Service
+	DB               *gorm.DB
+	DashboardEnabled bool
+	BootstrapToken   string
+	PublicURL        string
 
 	OtelProviders *telemetry.Providers
 	Metrics       telemetry.CustomMetrics
@@ -65,6 +74,11 @@ type Server struct {
 	userService      *user.UserService
 	toolGroupService *toolgroup.ToolGroupService
 	dashboardService *dashboard.Service
+	authService      *authn.Service
+	db               *gorm.DB
+	dashboardEnabled bool
+	bootstrapToken   string
+	publicURL        string
 
 	otelProviders *telemetry.Providers
 	metrics       telemetry.CustomMetrics
@@ -106,6 +120,11 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 		userService:           opts.UserService,
 		toolGroupService:      opts.ToolGroupService,
 		dashboardService:      opts.DashboardService,
+		authService:           opts.AuthService,
+		db:                    opts.DB,
+		dashboardEnabled:      opts.DashboardEnabled,
+		bootstrapToken:        opts.BootstrapToken,
+		publicURL:             strings.TrimRight(opts.PublicURL, "/"),
 		otelProviders:         opts.OtelProviders,
 		metrics:               opts.Metrics,
 		dashboardOAuthResults: make(map[string]dashboardOAuthSessionResult),
@@ -165,7 +184,8 @@ func (s *Server) Router() http.Handler {
 // setupRouter sets up the Gin router with the MCP proxy server and API endpoints.
 func (s *Server) setupRouter() (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery(), safeRequestLogger())
 
 	// if otel is enabled, setup prometheus metrics endpoint
 	if s.otelProviders != nil && s.otelProviders.IsEnabled() {
@@ -182,6 +202,13 @@ func (s *Server) setupRouter() (*gin.Engine, error) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		},
 	)
+	r.GET("/ready", s.readinessHandler())
+	r.GET("/.well-known/oauth-protected-resource", s.protectedResourceMetadataHandler())
+	if s.authService != nil {
+		r.GET("/auth/login", s.authLoginHandler())
+		r.GET("/auth/callback", s.authCallbackHandler())
+		r.POST("/auth/logout", s.requireInitialized(), s.requireDashboardAuth(), s.requireDashboardCSRF(), s.authLogoutHandler())
+	}
 
 	r.GET(
 		"/metadata",
@@ -203,8 +230,8 @@ func (s *Server) setupRouter() (*gin.Engine, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.GET("/", s.requireInitialized(), requireDashboardMode, gin.WrapH(dashboardFileServer))
-		r.GET("/index.html", s.requireInitialized(), requireDashboardMode, gin.WrapH(dashboardFileServer))
+		r.GET("/", s.requireInitialized(), requireDashboardMode, s.requireDashboardPageAuth(), gin.WrapH(dashboardFileServer))
+		r.GET("/index.html", s.requireInitialized(), requireDashboardMode, s.requireDashboardPageAuth(), gin.WrapH(dashboardFileServer))
 		r.GET("/assets/*filepath", s.requireInitialized(), requireDashboardMode, gin.WrapH(dashboardFileServer))
 	}
 
@@ -220,7 +247,7 @@ func (s *Server) setupRouter() (*gin.Engine, error) {
 	r.Any(
 		V0PathPrefix+"/groups/:name/mcp",
 		s.requireInitialized(),
-		s.checkAuthForMcpProxyAccess(),
+		s.checkAuthForToolGroupAccess(),
 		s.toolGroupMCPServerCallHandler(),
 	)
 
@@ -315,6 +342,11 @@ func (s *Server) setupRouter() (*gin.Engine, error) {
 			requireEnterpriseMode,
 			s.updateMcpClientHandler(),
 		)
+		adminAPI.POST(
+			"/clients/:name/rotate-token",
+			requireEnterpriseMode,
+			s.rotateMcpClientTokenHandler(),
+		)
 		adminAPI.DELETE(
 			"/clients/:name",
 			requireEnterpriseMode,
@@ -353,16 +385,18 @@ func (s *Server) setupRouter() (*gin.Engine, error) {
 	}
 
 	if s.dashboardService != nil {
+		r.GET("/api/dashboard/oauth/callback", s.requireInitialized(), requireDashboardMode, s.dashboardOAuthCallbackHandler())
 		dashboardAPI := r.Group(
 			"/api/dashboard",
 			s.requireInitialized(),
 			requireDashboardMode,
+			s.requireDashboardAuth(),
+			s.requireDashboardCSRF(),
 		)
 		{
 			dashboardAPI.GET("/overview", s.dashboardOverviewHandler())
 			dashboardAPI.GET("/servers", s.dashboardServersHandler())
 			dashboardAPI.POST("/servers", s.dashboardRegisterServerHandler())
-			dashboardAPI.GET("/oauth/callback", s.dashboardOAuthCallbackHandler())
 			dashboardAPI.GET("/oauth/session/:id", s.dashboardOAuthSessionHandler())
 			dashboardAPI.DELETE("/servers/:name", s.dashboardDeleteServerHandler())
 			dashboardAPI.PATCH("/servers/:name/enabled", s.dashboardSetServerEnabledHandler())
@@ -376,8 +410,21 @@ func (s *Server) setupRouter() (*gin.Engine, error) {
 			dashboardAPI.PATCH("/prompts/:name/enabled", s.dashboardSetPromptEnabledHandler())
 			dashboardAPI.GET("/resources", s.dashboardResourcesHandler())
 			dashboardAPI.GET("/diagnostics", s.dashboardDiagnosticsHandler())
+			dashboardAPI.GET("/connections", s.dashboardConnectionsHandler())
+			dashboardAPI.POST("/connections/static", s.dashboardCreateStaticConnectionHandler())
+			dashboardAPI.POST("/connections/static/:name/rotate", s.dashboardRotateStaticConnectionHandler())
+			dashboardAPI.DELETE("/connections/static/:name", s.dashboardDeleteStaticConnectionHandler())
+			dashboardAPI.DELETE("/connections/hosted/:client_id", s.dashboardRevokeHostedConnectionHandler())
 		}
 	}
 
 	return r, nil
+}
+
+func safeRequestLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		started := time.Now()
+		c.Next()
+		log.Printf("[http] method=%s path=%s status=%d duration_ms=%d", c.Request.Method, c.Request.URL.Path, c.Writer.Status(), time.Since(started).Milliseconds())
+	}
 }

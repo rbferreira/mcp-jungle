@@ -1,91 +1,48 @@
-# MCPJungle Docker Compose configuration for teams & organizations.
-# Use this compose file if you want to host MCPJungle on a remote server for multiple users within your org.
-# The mcpjungle server runs in "enterprise" mode with enterprise features enabled.
+# Hardened self-hosted production example. App Platform deployments use .do/*.yaml.
 services:
   db:
     image: postgres:17
-    container_name: mcpjungle-db
     environment:
-      POSTGRES_USER: mcpjungle
-      POSTGRES_PASSWORD: mcpjungle
-      POSTGRES_DB: mcpjungle
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-mcpjungle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mcpjungle}
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "PGPASSWORD=mcpjungle pg_isready -U mcpjungle"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: mcpjungle-pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - db
-
   mcpjungle:
-    image: ghcr.io/mcpjungle/mcpjungle:${MCPJUNGLE_IMAGE_TAG:-latest}
-    container_name: mcpjungle-server
+    image: ghcr.io/mcpjungle/mcpjungle:${MCPJUNGLE_IMAGE_TAG:-latest-stdio}
     environment:
-      DATABASE_URL: postgres://mcpjungle:mcpjungle@db:5432/mcpjungle
-      SERVER_MODE: ${SERVER_MODE:-enterprise}
-      OTEL_ENABLED: ${OTEL_ENABLED:-true}
-      MCP_SERVER_INIT_REQ_TIMEOUT_SEC: ${MCP_SERVER_INIT_REQ_TIMEOUT_SEC:-10}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-mcpjungle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mcpjungle}
+      SERVER_MODE: enterprise
+      DASHBOARD_ENABLED: "true"
+      OTEL_ENABLED: "false"
+      MCPJUNGLE_PUBLIC_URL: ${MCPJUNGLE_PUBLIC_URL:?set MCPJUNGLE_PUBLIC_URL}
+      MCPJUNGLE_ENCRYPTION_KEY: ${MCPJUNGLE_ENCRYPTION_KEY:?set MCPJUNGLE_ENCRYPTION_KEY}
+      MCPJUNGLE_BOOTSTRAP_TOKEN: ${MCPJUNGLE_BOOTSTRAP_TOKEN:-}
+      MCPJUNGLE_AUTH0_ISSUER: ${MCPJUNGLE_AUTH0_ISSUER:?set MCPJUNGLE_AUTH0_ISSUER}
+      MCPJUNGLE_AUTH0_AUDIENCE: ${MCPJUNGLE_AUTH0_AUDIENCE:?set MCPJUNGLE_AUTH0_AUDIENCE}
+      MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID: ${MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID:?set MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID}
+      MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET: ${MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET:?set MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET}
+      MCPJUNGLE_AUTH0_ADMIN_SUBJECT: ${MCPJUNGLE_AUTH0_ADMIN_SUBJECT:?set MCPJUNGLE_AUTH0_ADMIN_SUBJECT}
+      MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID: ${MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID:-}
+      MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET: ${MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET:-}
+      MCP_SERVER_INIT_REQ_TIMEOUT_SEC: ${MCP_SERVER_INIT_REQ_TIMEOUT_SEC:-30}
     ports:
-     - "${HOST_PORT:-8080}:8080"
-    # volumes:
-      # Uncomment the following lines ONLY if you need filesystem MCP server access
-      # WARNING: This mounts the host filesystem and should only be used for personal/development use
-      # Production deployments should avoid mounting host filesystem for security reasons
-      # - /:/host:ro
-      # 
-      # Alternative: Mount specific directories for better security
-      # - ${HOME}:/host/home:ro
-      # - /tmp:/host/tmp:rw
+      - "${HOST_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
-    restart: always
-
-  prometheus:
-    image: prom/prometheus:v2.53.0
-    container_name: mcpjungle-prometheus
-    ports:
-      - "9090:9090"
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    volumes:
-      - prometheus_data:/prometheus
-    configs:
-      - source: prometheus_config
-        target: /etc/prometheus/prometheus.yml
-    depends_on:
-      - mcpjungle
     restart: unless-stopped
-
-configs:
-  prometheus_config:
-    content: |
-      global:
-        scrape_interval: 15s
-        evaluation_interval: 30s
-
-      scrape_configs:
-        - job_name: 'mcpjungle'
-          static_configs:
-            - targets: ['mcpjungle:8080']
-          metrics_path: '/metrics'
-          scrape_interval: 15s
 
 volumes:
   db_data:
-  prometheus_data:

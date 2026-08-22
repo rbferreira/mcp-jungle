@@ -21,6 +21,8 @@ import (
 	"github.com/mcpjungle/mcpjungle/internal/db"
 	"github.com/mcpjungle/mcpjungle/internal/migrations"
 	"github.com/mcpjungle/mcpjungle/internal/model"
+	"github.com/mcpjungle/mcpjungle/internal/security"
+	"github.com/mcpjungle/mcpjungle/internal/service/authn"
 	"github.com/mcpjungle/mcpjungle/internal/service/config"
 	"github.com/mcpjungle/mcpjungle/internal/service/dashboard"
 	"github.com/mcpjungle/mcpjungle/internal/service/mcp"
@@ -45,10 +47,21 @@ const (
 	// its tools can act on the upstreams it proxies.
 	BindHostEnvVar = "MCPJUNGLE_BIND_HOST"
 
-	DBUrlEnvVar            = "DATABASE_URL"
-	SQLiteDBPathEnvVar     = "SQLITE_DB_PATH"
-	ServerModeEnvVar       = "SERVER_MODE"
-	TelemetryEnabledEnvVar = "OTEL_ENABLED"
+	DBUrlEnvVar                 = "DATABASE_URL"
+	SQLiteDBPathEnvVar          = "SQLITE_DB_PATH"
+	ServerModeEnvVar            = "SERVER_MODE"
+	TelemetryEnabledEnvVar      = "OTEL_ENABLED"
+	DashboardEnabledEnvVar      = "DASHBOARD_ENABLED"
+	PublicURLEnvVar             = "MCPJUNGLE_PUBLIC_URL"
+	EncryptionKeyEnvVar         = "MCPJUNGLE_ENCRYPTION_KEY"
+	BootstrapTokenEnvVar        = "MCPJUNGLE_BOOTSTRAP_TOKEN"
+	Auth0IssuerEnvVar           = "MCPJUNGLE_AUTH0_ISSUER"
+	Auth0AudienceEnvVar         = "MCPJUNGLE_AUTH0_AUDIENCE"
+	Auth0DashboardIDEnvVar      = "MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID"
+	Auth0DashboardSecretEnvVar  = "MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET"
+	Auth0AdminSubjectEnvVar     = "MCPJUNGLE_AUTH0_ADMIN_SUBJECT"
+	Auth0ManagementIDEnvVar     = "MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID"
+	Auth0ManagementSecretEnvVar = "MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET"
 )
 
 const (
@@ -245,6 +258,21 @@ func isTelemetryEnabled(desiredServerMode model.ServerMode) (bool, error) {
 	return telemetryEnabled, nil
 }
 
+func getDashboardEnabled(mode model.ServerMode) (bool, error) {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(DashboardEnabledEnvVar)))
+	if value == "" {
+		return mode == model.ModeDev, nil
+	}
+	switch value {
+	case "true", "1":
+		return true, nil
+	case "false", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid value for %s: must be true or false", DashboardEnabledEnvVar)
+	}
+}
+
 // getBindHost returns the interface to bind to.
 // precedence: command line flag > environment variable > all interfaces
 // An explicit empty --host is meaningful: it forces the historical all-interface
@@ -390,6 +418,23 @@ func runStartServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	dashboardEnabled, err := getDashboardEnabled(desiredServerMode)
+	if err != nil {
+		return err
+	}
+	publicURL := strings.TrimRight(strings.TrimSpace(os.Getenv(PublicURLEnvVar)), "/")
+	encryptionKey := strings.TrimSpace(os.Getenv(EncryptionKeyEnvVar))
+	if model.IsEnterpriseMode(desiredServerMode) {
+		if publicURL == "" || !strings.HasPrefix(publicURL, "https://") {
+			return fmt.Errorf("%s must be an HTTPS URL in enterprise mode", PublicURLEnvVar)
+		}
+		if encryptionKey == "" {
+			return fmt.Errorf("%s is required in enterprise mode", EncryptionKeyEnvVar)
+		}
+	}
+	if err := security.ConfigureEncryptionKey(encryptionKey); err != nil {
+		return fmt.Errorf("invalid %s: %w", EncryptionKeyEnvVar, err)
+	}
 
 	// Initialize metrics if enabled
 	telemetryEnabled, err := isTelemetryEnabled(desiredServerMode)
@@ -497,6 +542,30 @@ func runStartServer(cmd *cobra.Command, args []string) error {
 	configService := config.NewServerConfigService(dbConn)
 	userService := user.NewUserService(dbConn)
 	dashboardService := dashboard.NewService(dbConn, otelProviders.IsEnabled())
+	currentConfig, err := configService.GetConfig()
+	if err != nil {
+		return err
+	}
+	bootstrapToken := strings.TrimSpace(os.Getenv(BootstrapTokenEnvVar))
+	if model.IsEnterpriseMode(desiredServerMode) && !currentConfig.Initialized && bootstrapToken == "" {
+		return fmt.Errorf("%s is required until the enterprise server has been initialized", BootstrapTokenEnvVar)
+	}
+	var authService *authn.Service
+	if model.IsEnterpriseMode(desiredServerMode) && dashboardEnabled {
+		authService, err = authn.New(cmd.Context(), dbConn, authn.Config{
+			PublicURL:             publicURL,
+			Issuer:                os.Getenv(Auth0IssuerEnvVar),
+			Audience:              os.Getenv(Auth0AudienceEnvVar),
+			DashboardClientID:     os.Getenv(Auth0DashboardIDEnvVar),
+			DashboardClientSecret: os.Getenv(Auth0DashboardSecretEnvVar),
+			AdminSubject:          os.Getenv(Auth0AdminSubjectEnvVar),
+			ManagementClientID:    os.Getenv(Auth0ManagementIDEnvVar),
+			ManagementSecret:      os.Getenv(Auth0ManagementSecretEnvVar),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to configure Auth0: %w", err)
+		}
+	}
 
 	toolGroupService, err := toolgroup.NewToolGroupService(dbConn, mcpService)
 	if err != nil {
@@ -513,6 +582,11 @@ func runStartServer(cmd *cobra.Command, args []string) error {
 		UserService:       userService,
 		ToolGroupService:  toolGroupService,
 		DashboardService:  dashboardService,
+		AuthService:       authService,
+		DB:                dbConn,
+		DashboardEnabled:  dashboardEnabled,
+		BootstrapToken:    bootstrapToken,
+		PublicURL:         publicURL,
 		OtelProviders:     otelProviders,
 		Metrics:           mcpMetrics,
 	}

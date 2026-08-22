@@ -1,0 +1,98 @@
+---
+title: "Deploy on DigitalOcean App Platform"
+description: "Deploy an authenticated MCPJungle gateway with Auth0 and PostgreSQL."
+---
+
+This repository includes staging and production App Platform specifications:
+
+- `.do/staging.yaml` deploys `mcp-staging.lee.me` with a development PostgreSQL database.
+- `.do/production.yaml` deploys `mcp.lee.me` with managed PostgreSQL.
+
+Both environments use one 2 GB instance and the STDIO image. App Platform storage is ephemeral. Register only STDIO servers that do not require durable local files.
+
+## Configure Auth0
+
+Create one dedicated Auth0 tenant. Create separate staging and production Regular Web Applications and APIs.
+
+For each API:
+
+1. Set its identifier to the environment URL, such as `https://mcp-staging.lee.me`.
+2. Use RS256 access tokens and the RFC 9068 profile.
+3. Add the `mcp:tools` permission.
+4. Enable Dynamic Client Registration and the Resource Parameter Compatibility Profile.
+5. Enable authorization code, refresh token, and PKCE S256 support.
+
+Allow these dashboard callback and logout URLs:
+
+```text
+https://mcp-staging.lee.me/auth/callback
+https://mcp-staging.lee.me/
+https://mcp.lee.me/auth/callback
+https://mcp.lee.me/
+```
+
+Create a Machine to Machine application for connection revocation. Grant only the Auth0 Management API client read/delete permissions needed by your tenant policy.
+
+## Configure GitHub environments
+
+Create `staging` and `production` GitHub Environments. Require manual approval for `production`.
+
+Add the DigitalOcean project ID as `DIGITALOCEAN_PROJECT_ID` in both environments. Create the production PostgreSQL cluster first, then add its cluster name as the production environment variable `MCPJUNGLE_PRODUCTION_DB_CLUSTER`.
+
+Add these secrets to both environments, using environment-specific values:
+
+```text
+DIGITALOCEAN_ACCESS_TOKEN
+MCPJUNGLE_ENCRYPTION_KEY
+MCPJUNGLE_BOOTSTRAP_TOKEN
+MCPJUNGLE_AUTH0_ISSUER
+MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID
+MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET
+MCPJUNGLE_AUTH0_ADMIN_SUBJECT
+MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID
+MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET
+```
+
+Generate the encryption and bootstrap secrets locally:
+
+```bash
+openssl rand -base64 32
+openssl rand -base64 32
+```
+
+The staging workflow builds the exact commit that passed CI, publishes it to GHCR, and deploys its immutable digest. After the first publish, make the `mcp-jungle` GHCR package public so App Platform can pull it without registry credentials. Production accepts the full staging-tested commit SHA and resolves the same image digest.
+
+## Initialize an environment
+
+App Platform uses `/health` as its liveness check so a new environment is reachable for initialization. The deployment workflow separately requires `/ready`, which returns `503` until first-time initialization completes. The first workflow run therefore stops at the readiness gate. Initialize once:
+
+```bash
+mcpjungle init-server \
+  --registry https://mcp-staging.lee.me \
+  --bootstrap-token "$MCPJUNGLE_BOOTSTRAP_TOKEN"
+```
+
+After initialization, rotate or remove the bootstrap token from the App Platform environment.
+Rerun the deployment workflow and confirm its readiness gate passes.
+
+## Connect hosted LLM clients
+
+Create a tool group in the dashboard. Copy its Streamable HTTP endpoint, such as:
+
+```text
+https://mcp.lee.me/v0/groups/research/mcp
+```
+
+Use that URL when creating a ChatGPT or Claude custom MCP connector. The first valid Auth0 access token binds that OAuth client permanently to that tool group. Revoke the binding from **Connections** if you need to reconnect it.
+
+## Release checks
+
+Before production promotion, verify:
+
+- Auth0 dashboard login and logout.
+- One ChatGPT connection and one Claude connection.
+- Tool-group isolation and revocation.
+- One static local client against `/mcp`.
+- One HTTP, one `npx`, and one `uvx` upstream server.
+- Database backup and staging restore.
+- `/health`, `/ready`, deployment alerts, and application rollback.
