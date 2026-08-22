@@ -1,0 +1,136 @@
+---
+title: "Installation"
+description: "Install and run the mcpjungle CLI and gateway server"
+---
+
+Mcpjungle ships as a single binary.
+
+You will usually use this binary in two ways:
+
+- To run the Mcpjungle gateway server, which manages all upstream MCPs and serves the HTTP API & MCP endpoints
+- As a CLI client to manage the mcpjungle server and interact with the mcp gateway
+
+For individual users, the simplest (and recommended) setup is: install the CLI, then run the gateway with Docker Compose.
+
+<Tabs>
+  <Tab title="Homebrew">
+    Homebrew is the recommended installation method on macOS and Linux.
+
+    ```bash
+    brew install mcpjungle/mcpjungle/mcpjungle
+    ```
+
+    <Warning>
+      On macOS, you must use Homebrew. The pre-built binary available on the Releases page is not [notarized](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) yet, so macOS will block it from running.
+    </Warning>
+
+    Verify the installation:
+
+    ```bash
+    mcpjungle version
+    ```
+  </Tab>
+
+  <Tab title="Docker">
+    Pull the official Mcpjungle image if you want to run the gateway in Docker:
+
+    ```bash
+    docker pull ghcr.io/mcpjungle/mcpjungle
+    ```
+
+    The default image is light-weight & minimal. It contains only the `mcpjungle` binary and the dependencies needed for runtime.
+
+    If you need to register stdio-based MCP servers that rely on `npx` or `uvx`, use the `stdio`-tagged image instead:
+
+    ```bash
+    docker pull ghcr.io/mcpjungle/mcpjungle:latest-stdio
+    ```
+
+    <Note>
+      The `stdio`-tagged image is significantly larger in size due to more dependencies being included.
+      Use it only when you need to run stdio-based MCP servers as well.
+    </Note>
+
+    For running the gateway locally, the recommended approach is to use Docker Compose. See the [Deploy with Docker](/deployment/docker) guide for details.
+  </Tab>
+
+  <Tab title="Binary">
+    Pre-built binaries for Linux and macOS are available on the [GitHub Releases page](https://github.com/mcpjungle/MCPJungle/releases).
+
+    Download the binary for your platform, make it executable, and move it to a directory on your `PATH`.
+
+    <Warning>
+      On macOS, the binary is not notarized, so Gatekeeper will block it from running. Use Homebrew instead.
+    </Warning>
+
+    Alternatively, you can also [build the binary from source](/developers/development#building-and-testing).
+
+    Verify the installation after placing the binary on your `PATH`:
+
+    ```bash
+    mcpjungle version
+    ```
+  </Tab>
+</Tabs>
+
+## Server
+
+You can use the binary to run the server directly on your host:
+
+```bash
+mcpjungle start
+```
+
+This starts the server on port 8080 by default. You can run a quick health check:
+
+```bash
+curl http://localhost:8080/health
+```
+
+The CLI also connects to this address by default.
+
+If the following command also returns the server version, then your CLI is correctly connected to the server:
+
+```bash
+mcpjungle version
+```
+
+## Configure a custom registry URL
+
+By default, the CLI connects to Mcpjungle at `http://127.0.0.1:8080`. If your server runs on a different host or port, configure the registry URL in one of two ways:
+
+<Tabs>
+    <Tab title="--registry flag">
+        Pass the URL inline with every command:
+
+        ```bash
+        mcpjungle --registry http://my-server:9000 list tools
+        ```
+    </Tab>
+    <Tab title="Config file">
+        Create or edit `.mcpjungle.conf` in your home directory so you don't repeat the flag:
+
+        ```yaml
+        registry_url: http://my-server:9000
+        ```
+    </Tab>
+</Tabs>
+
+You have now successfully installed mcpjungle and connected the CLI to the server.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy with Docker" icon="docker" href="/deployment/docker">
+    Choose the right Docker path for local development or a shared deployment.
+  </Card>
+  <Card title="Core Concepts" icon="diagram-project" href="/core-concepts">
+    Understand the difference between the CLI, the gateway, upstream MCP servers, and groups.
+  </Card>
+  <Card title="Add a streamable HTTP MCP server" icon="server" href="/guides/register-http-servers">
+    Register a remote MCP server and expose it through mcpjungle.
+  </Card>
+  <Card title="Add a STDIO MCP server" icon="terminal" href="/guides/register-stdio-servers">
+    Register a local STDIO-based MCP server and expose it through mcpjungle.
+  </Card>
+</CardGroup>

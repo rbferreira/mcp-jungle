@@ -1,0 +1,118 @@
+---
+title: "Starting the server"
+description: "Starting and initializing the mcpjungle server"
+---
+
+These commands operate on the Mcpjungle server process itself rather than on its registry contents. `start` launches the gateway, `init-server` prepares it for enterprise use, and `version` reports what is running.
+
+## `start`
+
+Starts the Mcpjungle HTTP server and MCP gateway.
+
+```bash
+mcpjungle start [flags]
+```
+
+The server listens on all interfaces on port `8080` by default and exposes the MCP proxy at `/mcp`. On first run in development mode, it automatically initializes itself — no additional setup is needed.
+
+### Flags
+
+<ParamField body="--port" type="string">
+  TCP port to bind the HTTP server to. Overrides the `PORT` environment variable. Defaults to `8080`.
+</ParamField>
+
+<ParamField body="--host" type="string">
+  Host or network interface to bind the HTTP server to. Overrides the `MCPJUNGLE_BIND_HOST` environment variable. Defaults to all interfaces. Use `127.0.0.1` for local-only access.
+</ParamField>
+
+<ParamField body="--sqlite-db-path" type="string">
+  Optional path to a custom SQLite database file to use when PostgreSQL is not configured. If not provided, MCPJungle defaults to `./mcpjungle.db`. Overrides the `SQLITE_DB_PATH` environment variable.
+</ParamField>
+
+<ParamField body="--enterprise" type="boolean" default="false">
+  Start the server in enterprise mode, which enables access control, authenticated clients, and user management. Equivalent to setting `SERVER_MODE=enterprise`. When using this flag on a fresh database, the server will print a reminder to run `init-server` before it can be used.
+</ParamField>
+
+### Environment variables
+
+The `start` command reads environment variables for server mode, database configuration, timeouts, and telemetry. A `.env` file in the working directory is loaded automatically if present.
+
+For the complete list, defaults, and `_FILE` variants, see [Environment variables](/reference/environment-variables).
+
+### Examples
+
+Start in development mode (default):
+
+```bash
+mcpjungle start
+```
+
+Start on a custom port:
+
+```bash
+mcpjungle start --port 9000
+```
+
+Start with local-only network access:
+
+```bash
+mcpjungle start --host 127.0.0.1
+```
+
+Start with a custom SQLite file:
+
+```bash
+mcpjungle start --sqlite-db-path /path/to/mcpjungle.db
+```
+
+Start in enterprise mode:
+
+```bash
+mcpjungle start --enterprise
+```
+
+Start with a Postgres database:
+
+```bash
+DATABASE_URL="postgres://user:password@localhost:5432/mcpjungle" mcpjungle start
+```
+
+---
+
+## `init-server`
+
+Initializes the Mcpjungle server when running in enterprise mode. Run it once, from your local machine, after the server has started.
+
+```bash
+mcpjungle init-server [--registry <url>]
+```
+
+`init-server` creates the first admin user and stores the registry URL and token in `~/.mcpjungle.conf`, authenticating your CLI as admin.
+
+For the full enterprise bootstrap flow, see [Enterprise operations](/reference/cli-enterprise) and [Access and governance overview](/governance/overview).
+
+### Example
+
+```bash
+mcpjungle --registry http://your-server:8080 init-server
+```
+
+---
+
+## `version`
+
+Prints version information for both the CLI binary and the connected server.
+
+```bash
+mcpjungle version
+```
+
+### Output
+
+```text
+CLI Version: v1.2.3
+Server Version: v1.2.3
+Server URL:  http://127.0.0.1:8080
+```
+
+If the server is unreachable (for example, when running the CLI without a local server), the server version line is replaced with a message indicating the version could not be retrieved.
