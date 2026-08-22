@@ -1,7 +1,7 @@
 name: mcpjungle-production
 region: nyc
 domains:
-  - domain: mcp.lee.me
+  - domain: mcp.luckiertrout.com
     type: PRIMARY
     minimum_tls_version: "1.2"
 alerts:
@@ -38,7 +38,7 @@ services:
         value: "false"
       - key: MCPJUNGLE_PUBLIC_URL
         scope: RUN_TIME
-        value: https://mcp.lee.me
+        value: https://mcp.luckiertrout.com
       - key: DATABASE_URL
         value: ${mcpjungle-db.DATABASE_URL}
         scope: RUN_TIME
@@ -55,7 +55,7 @@ services:
         value: ${MCPJUNGLE_AUTH0_ISSUER}
       - key: MCPJUNGLE_AUTH0_AUDIENCE
         scope: RUN_TIME
-        value: https://mcp.lee.me
+        value: https://mcp.luckiertrout.com
       - key: MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID
         scope: RUN_TIME
         value: ${MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID}

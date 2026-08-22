@@ -5,8 +5,8 @@ description: "Deploy an authenticated MCPJungle gateway with Auth0 and PostgreSQ
 
 This repository includes staging and production App Platform specifications:
 
-- `.do/staging.yaml` deploys `mcp-staging.lee.me` with a development PostgreSQL database.
-- `.do/production.yaml` deploys `mcp.lee.me` with managed PostgreSQL.
+- `.do/staging.yaml` deploys `mcp-staging.luckiertrout.com` with a dedicated managed PostgreSQL database.
+- `.do/production.yaml` deploys `mcp.luckiertrout.com` with managed PostgreSQL.
 
 Both environments use one 2 GB instance and the STDIO image. App Platform storage is ephemeral. Register only STDIO servers that do not require durable local files.
 
@@ -16,7 +16,7 @@ Create one dedicated Auth0 tenant. Create separate staging and production Regula
 
 For each API:
 
-1. Set its identifier to the environment URL, such as `https://mcp-staging.lee.me`.
+1. Set its identifier to the environment URL, such as `https://mcp-staging.luckiertrout.com`.
 2. Use RS256 access tokens and the RFC 9068 profile.
 3. Add the `mcp:tools` permission.
 4. Enable Dynamic Client Registration and the Resource Parameter Compatibility Profile.
@@ -25,10 +25,10 @@ For each API:
 Allow these dashboard callback and logout URLs:
 
 ```text
-https://mcp-staging.lee.me/auth/callback
-https://mcp-staging.lee.me/
-https://mcp.lee.me/auth/callback
-https://mcp.lee.me/
+https://mcp-staging.luckiertrout.com/auth/callback
+https://mcp-staging.luckiertrout.com/
+https://mcp.luckiertrout.com/auth/callback
+https://mcp.luckiertrout.com/
 ```
 
 Create a Machine to Machine application for connection revocation. Grant only the Auth0 Management API client read/delete permissions needed by your tenant policy.
@@ -37,7 +37,7 @@ Create a Machine to Machine application for connection revocation. Grant only th
 
 Create `staging` and `production` GitHub Environments. Require manual approval for `production`.
 
-Add the DigitalOcean project ID as `DIGITALOCEAN_PROJECT_ID` in both environments. Create the production PostgreSQL cluster first, then add its cluster name as the production environment variable `MCPJUNGLE_PRODUCTION_DB_CLUSTER`.
+Add the DigitalOcean project ID as `DIGITALOCEAN_PROJECT_ID` in both environments. Create the staging and production PostgreSQL clusters first, then add their cluster names as `MCPJUNGLE_STAGING_DB_CLUSTER` and `MCPJUNGLE_PRODUCTION_DB_CLUSTER` in the matching GitHub environments.
 
 Add these secrets to both environments, using environment-specific values:
 
@@ -68,7 +68,7 @@ App Platform uses `/health` as its liveness check so a new environment is reacha
 
 ```bash
 mcpjungle init-server \
-  --registry https://mcp-staging.lee.me \
+  --registry https://mcp-staging.luckiertrout.com \
   --bootstrap-token "$MCPJUNGLE_BOOTSTRAP_TOKEN"
 ```
 
@@ -80,7 +80,7 @@ Rerun the deployment workflow and confirm its readiness gate passes.
 Create a tool group in the dashboard. Copy its Streamable HTTP endpoint, such as:
 
 ```text
-https://mcp.lee.me/v0/groups/research/mcp
+https://mcp.luckiertrout.com/v0/groups/research/mcp
 ```
 
 Use that URL when creating a ChatGPT or Claude custom MCP connector. The first valid Auth0 access token binds that OAuth client permanently to that tool group. Revoke the binding from **Connections** if you need to reconnect it.
