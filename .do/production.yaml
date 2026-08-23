@@ -46,10 +46,6 @@ services:
         scope: RUN_TIME
         value: ${MCPJUNGLE_ENCRYPTION_KEY}
         type: SECRET
-      - key: MCPJUNGLE_BOOTSTRAP_TOKEN
-        scope: RUN_TIME
-        value: ${MCPJUNGLE_BOOTSTRAP_TOKEN}
-        type: SECRET
       - key: MCPJUNGLE_AUTH0_ISSUER
         scope: RUN_TIME
         value: ${MCPJUNGLE_AUTH0_ISSUER}
