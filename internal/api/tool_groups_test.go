@@ -72,3 +72,31 @@ func TestUpdateToolGroupHandler_NotFound(t *testing.T) {
 	testhelpers.AssertEqual(t, http.StatusNotFound, w.Code)
 	testhelpers.AssertStringContains(t, w.Body.String(), "not found")
 }
+
+func TestToolGroupEndpointsPreferConfiguredPublicURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	s := &Server{publicURL: "https://mcp.example.com"}
+
+	req := httptest.NewRequest(http.MethodGet, "http://attacker.example/groups", nil)
+	req.Header.Set("X-Forwarded-Proto", "http")
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = req
+
+	endpoints := s.getToolGroupEndpoints(c, "research")
+	testhelpers.AssertEqual(t, "https://mcp.example.com/v0/groups/research/mcp", endpoints.StreamableHTTPEndpoint)
+	testhelpers.AssertEqual(t, "https://mcp.example.com/v0/groups/research/sse", endpoints.SSEEndpoint)
+	testhelpers.AssertEqual(t, "https://mcp.example.com/v0/groups/research/message", endpoints.SSEMessageEndpoint)
+}
+
+func TestToolGroupEndpointsFallBackToRequestHostWithoutPublicURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodGet, "http://registry.example/groups", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = req
+
+	endpoints := s.getToolGroupEndpoints(c, "research")
+	testhelpers.AssertEqual(t, "https://registry.example/v0/groups/research/mcp", endpoints.StreamableHTTPEndpoint)
+}
