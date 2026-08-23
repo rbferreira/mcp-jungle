@@ -12,6 +12,7 @@ import (
 // handleServiceError writes the appropriate HTTP error response for a service-layer error.
 // It maps apierrors.ErrNotFound to 404 not found
 // and apierrors.ErrInvalidInput to 400 bad request.
+// It maps apierrors.ErrConflict to 409 conflict.
 // all other errors become 500.
 func handleServiceError(c *gin.Context, err error) {
 	if errors.Is(err, apierrors.ErrNotFound) {
@@ -24,6 +25,10 @@ func handleServiceError(c *gin.Context, err error) {
 			resp.Code = apierrors.CodeUpstreamOAuthRequired
 		}
 		c.JSON(http.StatusBadRequest, resp)
+		return
+	}
+	if errors.Is(err, apierrors.ErrConflict) {
+		c.JSON(http.StatusConflict, types.APIErrorResponse{Error: err.Error()})
 		return
 	}
 	c.JSON(http.StatusInternalServerError, types.APIErrorResponse{Error: err.Error()})

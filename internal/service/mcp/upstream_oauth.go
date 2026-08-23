@@ -577,7 +577,7 @@ func (m *MCPService) CompleteUpstreamOAuthSession(ctx context.Context, sessionID
 
 	if session.Force {
 		if _, err := m.GetMcpServer(server.Name); err == nil {
-			if err := m.DeregisterMcpServer(server.Name); err != nil {
+			if err := m.DeregisterMcpServerForReplacement(server.Name); err != nil {
 				return nil, fmt.Errorf("failed to deregister existing server during OAuth completion: %w", err)
 			}
 		} else if !errors.Is(err, apierrors.ErrNotFound) {

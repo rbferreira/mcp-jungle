@@ -52,6 +52,12 @@ func TestHandleServiceError(t *testing.T) {
 			expectedBody:   "invalid access token",
 		},
 		{
+			name:           "wrapped ErrConflict returns 409",
+			err:            fmt.Errorf("server is referenced by a tool group: %w", apierrors.ErrConflict),
+			expectedStatus: http.StatusConflict,
+			expectedBody:   "referenced by a tool group",
+		},
+		{
 			name:           "unrelated error returns 500",
 			err:            errors.New("db connection refused"),
 			expectedStatus: http.StatusInternalServerError,

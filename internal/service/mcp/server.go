@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
+	"strings"
 
 	mcpgotransport "github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mcpjungle/mcpjungle/internal/model"
@@ -134,9 +136,33 @@ func (m *MCPService) registerMcpServer(ctx context.Context, s *model.McpServer, 
 // Deregistered tools, prompts and resources are also removed from the MCP proxy server.
 // Any stateful sessions associated with this server are also closed.
 func (m *MCPService) DeregisterMcpServer(name string) error {
+	return m.deregisterMcpServer(name, false)
+}
+
+// DeregisterMcpServerForReplacement removes an existing server while preserving
+// tool-group references so a force registration can replace it in place.
+func (m *MCPService) DeregisterMcpServerForReplacement(name string) error {
+	return m.deregisterMcpServer(name, true)
+}
+
+func (m *MCPService) deregisterMcpServer(name string, preserveToolGroupReferences bool) error {
 	s, err := m.GetMcpServer(name)
 	if err != nil {
 		return fmt.Errorf("failed to get MCP server %s from DB: %w", name, err)
+	}
+	if !preserveToolGroupReferences {
+		dependentGroups, err := m.toolGroupsReferencingServer(name)
+		if err != nil {
+			return fmt.Errorf("failed to check tool group references for server %s: %w", name, err)
+		}
+		if len(dependentGroups) > 0 {
+			return fmt.Errorf(
+				"cannot deregister MCP server %s because it is referenced by tool groups %s; update or delete those groups first: %w",
+				name,
+				strings.Join(dependentGroups, ", "),
+				apierrors.ErrConflict,
+			)
+		}
 	}
 	if err := m.deregisterServerTools(s); err != nil {
 		return fmt.Errorf(
@@ -173,6 +199,49 @@ func (m *MCPService) DeregisterMcpServer(name string) error {
 	m.sessionManager.CloseSession(name)
 
 	return nil
+}
+
+func (m *MCPService) toolGroupsReferencingServer(serverName string) ([]string, error) {
+	var groups []model.ToolGroup
+	if err := m.db.Find(&groups).Error; err != nil {
+		return nil, err
+	}
+
+	toolPrefix := serverName + serverToolNameSep
+	dependentGroups := make([]string, 0)
+	for i := range groups {
+		includedServers, err := groups[i].GetServers()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode included servers for tool group %s: %w", groups[i].Name, err)
+		}
+		if containsString(includedServers, serverName) {
+			dependentGroups = append(dependentGroups, groups[i].Name)
+			continue
+		}
+
+		includedTools, err := groups[i].GetTools()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode included tools for tool group %s: %w", groups[i].Name, err)
+		}
+		for _, toolName := range includedTools {
+			if strings.HasPrefix(toolName, toolPrefix) {
+				dependentGroups = append(dependentGroups, groups[i].Name)
+				break
+			}
+		}
+	}
+
+	sort.Strings(dependentGroups)
+	return dependentGroups, nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // ListMcpServers returns all registered MCP servers.

@@ -11,9 +11,11 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/mcpjungle/mcpjungle/internal/model"
 	"github.com/mcpjungle/mcpjungle/internal/telemetry"
+	"github.com/mcpjungle/mcpjungle/pkg/apierrors"
 	"github.com/mcpjungle/mcpjungle/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -29,6 +31,7 @@ func setupTestDBForServerLifecycle(t *testing.T) *gorm.DB {
 		&model.Tool{},
 		&model.Prompt{},
 		&model.Resource{},
+		&model.ToolGroup{},
 		&model.UpstreamOAuthToken{},
 		&model.UpstreamOAuthPendingSession{},
 	)
@@ -425,4 +428,73 @@ func TestDeregisterMcpServer_RemovesEntitiesOAuthStateAndSession(t *testing.T) {
 	_, ok := service.GetToolInstance("test-server__echo")
 	assert.False(t, ok)
 	assert.False(t, service.sessionManager.HasSession(srv.Name))
+}
+
+func TestDeregisterMcpServer_RejectsToolGroupReferences(t *testing.T) {
+	tests := []struct {
+		name            string
+		includedServers datatypes.JSON
+		includedTools   datatypes.JSON
+	}{
+		{
+			name:            "included server",
+			includedServers: datatypes.JSON(`["test-server"]`),
+			includedTools:   datatypes.JSON(`[]`),
+		},
+		{
+			name:            "explicit included tool",
+			includedServers: datatypes.JSON(`[]`),
+			includedTools:   datatypes.JSON(`["test-server__echo"]`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupTestDBForServerLifecycle(t)
+			srv := createTestServer(t, db)
+			createTestToolRecord(t, db, srv, "echo", true)
+			require.NoError(t, db.Create(&model.ToolGroup{
+				Name:            "dependent-group",
+				IncludedServers: tt.includedServers,
+				IncludedTools:   tt.includedTools,
+				ExcludedTools:   datatypes.JSON(`[]`),
+			}).Error)
+
+			service := newTestLifecycleService(t, db)
+			err := service.DeregisterMcpServer(srv.Name)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, apierrors.ErrConflict)
+			assert.Contains(t, err.Error(), "dependent-group")
+
+			_, err = service.GetMcpServer(srv.Name)
+			require.NoError(t, err)
+			var toolCount int64
+			require.NoError(t, db.Model(&model.Tool{}).Where("server_id = ?", srv.ID).Count(&toolCount).Error)
+			assert.EqualValues(t, 1, toolCount)
+		})
+	}
+}
+
+func TestDeregisterMcpServerForReplacement_PreservesToolGroupReference(t *testing.T) {
+	db := setupTestDBForServerLifecycle(t)
+	srv := createTestServer(t, db)
+	createTestToolRecord(t, db, srv, "echo", true)
+	require.NoError(t, db.Create(&model.ToolGroup{
+		Name:            "dependent-group",
+		IncludedServers: datatypes.JSON(`["test-server"]`),
+		IncludedTools:   datatypes.JSON(`[]`),
+		ExcludedTools:   datatypes.JSON(`[]`),
+	}).Error)
+
+	service := newTestLifecycleService(t, db)
+	require.NoError(t, service.DeregisterMcpServerForReplacement(srv.Name))
+
+	_, err := service.GetMcpServer(srv.Name)
+	assert.ErrorIs(t, err, apierrors.ErrNotFound)
+
+	var group model.ToolGroup
+	require.NoError(t, db.Where("name = ?", "dependent-group").First(&group).Error)
+	servers, err := group.GetServers()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"test-server"}, servers)
 }
