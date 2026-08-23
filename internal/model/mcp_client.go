@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/mcpjungle/mcpjungle/pkg/types"
 	"gorm.io/datatypes"
@@ -15,7 +16,8 @@ type McpClient struct {
 	Name        string `json:"name" gorm:"uniqueIndex;not null"`
 	Description string `json:"description"`
 
-	AccessToken string `json:"access_token" gorm:"unique; not null"`
+	AccessToken string     `json:"access_token" gorm:"unique; not null"`
+	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
 
 	// AllowList contains a list of MCP Server names that this client is allowed to view and call
 	// storing the list of server names as a JSON array is a convenient way for now.

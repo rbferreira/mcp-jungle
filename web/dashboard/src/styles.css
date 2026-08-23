@@ -130,6 +130,9 @@ code {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
 }
 
 .sidebar-link:hover {
@@ -163,6 +166,11 @@ code {
 
 .main-shell {
   padding: 18px;
+}
+
+.section-stack {
+  display: grid;
+  gap: 20px;
 }
 
 .topbar {

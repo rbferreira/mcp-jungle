@@ -1,0 +1,99 @@
+name: mcpjungle-production
+region: nyc
+domains:
+  - domain: mcp.luckiertrout.com
+    type: PRIMARY
+    minimum_tls_version: "1.2"
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+services:
+  - name: gateway
+    image:
+      registry_type: GHCR
+      registry: luckiertrout
+      repository: mcp-jungle
+      digest: ${IMAGE_DIGEST}
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-2gb
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 15
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 6
+    termination:
+      drain_seconds: 30
+      grace_period_seconds: 90
+    envs:
+      - key: SERVER_MODE
+        scope: RUN_TIME
+        value: enterprise
+      - key: DASHBOARD_ENABLED
+        scope: RUN_TIME
+        value: "true"
+      - key: OTEL_ENABLED
+        scope: RUN_TIME
+        value: "false"
+      - key: MCPJUNGLE_PUBLIC_URL
+        scope: RUN_TIME
+        value: https://mcp.luckiertrout.com
+      - key: DATABASE_URL
+        value: ${mcpjungle-db.DATABASE_URL}
+        scope: RUN_TIME
+      - key: MCPJUNGLE_ENCRYPTION_KEY
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_ENCRYPTION_KEY}
+        type: SECRET
+      - key: MCPJUNGLE_BOOTSTRAP_TOKEN
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_BOOTSTRAP_TOKEN}
+        type: SECRET
+      - key: MCPJUNGLE_AUTH0_ISSUER
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_AUTH0_ISSUER}
+      - key: MCPJUNGLE_AUTH0_AUDIENCE
+        scope: RUN_TIME
+        value: https://mcp.luckiertrout.com
+      - key: MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID}
+        type: SECRET
+      - key: MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET}
+        type: SECRET
+      - key: MCPJUNGLE_AUTH0_ADMIN_SUBJECT
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_AUTH0_ADMIN_SUBJECT}
+        type: SECRET
+      - key: MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID}
+        type: SECRET
+      - key: MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET
+        scope: RUN_TIME
+        value: ${MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET}
+        type: SECRET
+    alerts:
+      - rule: CPU_UTILIZATION
+        operator: GREATER_THAN
+        value: 80
+        window: FIVE_MINUTES
+      - rule: MEM_UTILIZATION
+        operator: GREATER_THAN
+        value: 80
+        window: FIVE_MINUTES
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 1
+        window: FIVE_MINUTES
+databases:
+  - name: mcpjungle-db
+    engine: PG
+    version: "17"
+    production: true
+    cluster_name: ${MCPJUNGLE_PRODUCTION_DB_CLUSTER}
+    db_name: mcpjungle
+    db_user: doadmin

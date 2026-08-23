@@ -1,8 +1,10 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
+	"github.com/mcpjungle/mcpjungle/internal/security"
 	"github.com/mcpjungle/mcpjungle/pkg/types"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -54,4 +56,57 @@ type UpstreamOAuthToken struct {
 	RefreshToken string    `json:"refresh_token"`
 	Scope        string    `json:"scope"`
 	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+func encryptFields(fields ...*string) error {
+	for _, field := range fields {
+		value, err := security.EncryptString(*field)
+		if err != nil {
+			return err
+		}
+		*field = value
+	}
+	return nil
+}
+
+func decryptFields(fields ...*string) error {
+	for _, field := range fields {
+		value, err := security.DecryptString(*field)
+		if err != nil {
+			return err
+		}
+		*field = value
+	}
+	return nil
+}
+
+func (s *UpstreamOAuthPendingSession) BeforeSave(_ *gorm.DB) error {
+	serverInput := string(s.ServerInput)
+	if err := encryptFields(&serverInput, &s.ClientSecret, &s.CodeVerifier); err != nil {
+		return err
+	}
+	if security.IsEncrypted(serverInput) {
+		s.ServerInput = []byte(`{"_encrypted":"` + serverInput + `"}`)
+	}
+	return nil
+}
+
+func (s *UpstreamOAuthPendingSession) AfterFind(_ *gorm.DB) error {
+	var envelope encryptedConfigEnvelope
+	if json.Unmarshal(s.ServerInput, &envelope) == nil && envelope.Encrypted != "" {
+		value, err := security.DecryptString(envelope.Encrypted)
+		if err != nil {
+			return err
+		}
+		s.ServerInput = []byte(value)
+	}
+	return decryptFields(&s.ClientSecret, &s.CodeVerifier)
+}
+
+func (t *UpstreamOAuthToken) BeforeSave(_ *gorm.DB) error {
+	return encryptFields(&t.ClientSecret, &t.AccessToken, &t.RefreshToken)
+}
+
+func (t *UpstreamOAuthToken) AfterFind(_ *gorm.DB) error {
+	return decryptFields(&t.ClientSecret, &t.AccessToken, &t.RefreshToken)
 }

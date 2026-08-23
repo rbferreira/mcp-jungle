@@ -16,6 +16,10 @@ type InitServerResponse struct {
 
 // InitServer sends a request to initialize the server in enterprise mode
 func (c *Client) InitServer() (*InitServerResponse, error) {
+	return c.InitServerWithBootstrapToken("")
+}
+
+func (c *Client) InitServerWithBootstrapToken(bootstrapToken string) (*InitServerResponse, error) {
 	u, _ := url.JoinPath(c.baseURL, "/init")
 
 	// TODO: Replace ModeProd with ModeEnterprise in future.
@@ -34,7 +38,15 @@ func (c *Client) InitServer() (*InitServerResponse, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Post(u, "application/json", bytes.NewBuffer(body))
+	req, err := http.NewRequest(http.MethodPost, u, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if bootstrapToken != "" {
+		req.Header.Set("X-MCPJungle-Bootstrap-Token", bootstrapToken)
+	}
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request to %s: %w", u, err)
 	}

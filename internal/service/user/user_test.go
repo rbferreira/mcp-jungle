@@ -115,7 +115,7 @@ func TestGetUserByAccessToken(t *testing.T) {
 	retrievedUser, _ := svc.GetUserByAccessToken(user.AccessToken)
 	testhelpers.AssertNotNil(t, retrievedUser)
 	testhelpers.AssertEqual(t, u.Username, retrievedUser.Username)
-	testhelpers.AssertEqual(t, user.AccessToken, retrievedUser.AccessToken)
+	testhelpers.AssertEqual(t, "", retrievedUser.AccessToken)
 	// Test getting user by invalid token
 	_, err := svc.GetUserByAccessToken("invalid-token")
 	testhelpers.AssertError(t, err)

@@ -2,13 +2,22 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mcpjungle/mcpjungle/internal/model"
+	"github.com/mcpjungle/mcpjungle/internal/service/authn"
 	"github.com/mcpjungle/mcpjungle/pkg/types"
+	"gorm.io/datatypes"
+)
+
+const (
+	dashboardSessionCookie = "mcpjungle_session"
+	dashboardCSRFCookie    = "mcpjungle_csrf"
 )
 
 // requireInitialized is middleware to reject requests to certain routes if the server is not initialized
@@ -25,8 +34,8 @@ func (s *Server) requireInitialized() gin.HandlerFunc {
 	}
 }
 
-// requireDashboardMode returns 404 if mcpjungle server is not running in development mode.
-// It is mainly used for frontend routes, since frontend is currently only allowed in dev mode.
+// requireDashboardMode allows the open local dashboard in development mode and
+// the authenticated dashboard when it is explicitly enabled in enterprise mode.
 func (s *Server) requireDashboardMode() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		mode, exists := c.Get("mode")
@@ -39,8 +48,72 @@ func (s *Server) requireDashboardMode() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "invalid server mode in context"})
 			return
 		}
-		if currentMode != model.ModeDev {
+		if currentMode != model.ModeDev && !(model.IsEnterpriseMode(currentMode) && s.dashboardEnabled) {
 			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		c.Next()
+	}
+}
+
+func (s *Server) requireDashboardPageAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		mode, _ := c.Get("mode")
+		if mode == model.ModeDev {
+			c.Next()
+			return
+		}
+		if s.authService == nil {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		token, _ := c.Cookie(dashboardSessionCookie)
+		if _, err := s.authService.AuthenticateSession(c.Request.Context(), token); err != nil {
+			c.Redirect(http.StatusFound, "/auth/login")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+func (s *Server) requireDashboardAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		mode, _ := c.Get("mode")
+		if mode == model.ModeDev {
+			c.Next()
+			return
+		}
+		if s.authService == nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "dashboard authentication is not configured"})
+			return
+		}
+		token, _ := c.Cookie(dashboardSessionCookie)
+		session, err := s.authService.AuthenticateSession(c.Request.Context(), token)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "dashboard session is missing or expired"})
+			return
+		}
+		c.Set("dashboard_session", session)
+		c.Next()
+	}
+}
+
+func (s *Server) requireDashboardCSRF() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodOptions {
+			c.Next()
+			return
+		}
+		mode, _ := c.Get("mode")
+		if mode == model.ModeDev {
+			c.Next()
+			return
+		}
+		sessionValue, exists := c.Get("dashboard_session")
+		session, ok := sessionValue.(*model.DashboardSession)
+		if !exists || !ok || !s.authService.VerifyCSRF(session, c.GetHeader("X-CSRF-Token")) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid CSRF token"})
 			return
 		}
 		c.Next()
@@ -201,6 +274,71 @@ func (s *Server) checkAuthForMcpProxyAccess() gin.HandlerFunc {
 		ctx = context.WithValue(c.Request.Context(), "client", client)
 		c.Request = c.Request.WithContext(ctx)
 
+		c.Next()
+	}
+}
+
+func (s *Server) oauthChallenge(c *gin.Context, status int, message string) {
+	metadataURL := s.publicURL + "/.well-known/oauth-protected-resource"
+	if s.publicURL != "" {
+		c.Header("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s", scope="mcp:tools"`, metadataURL))
+	}
+	c.AbortWithStatusJSON(status, gin.H{"error": message})
+}
+
+// checkAuthForToolGroupAccess accepts either a static MCP client token or an
+// Auth0 access token. Auth0 clients are atomically bound to one tool group.
+func (s *Server) checkAuthForToolGroupAccess() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		modeValue, exists := c.Get("mode")
+		mode, ok := modeValue.(model.ServerMode)
+		if !exists || !ok {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server mode not found in context"})
+			return
+		}
+		ctx := context.WithValue(c.Request.Context(), "mode", mode)
+		c.Request = c.Request.WithContext(ctx)
+		if mode == model.ModeDev {
+			c.Next()
+			return
+		}
+		token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+		if token == "" {
+			s.oauthChallenge(c, http.StatusUnauthorized, "missing access token")
+			return
+		}
+		if client, err := s.mcpClientService.GetClientByToken(token); err == nil {
+			ctx = context.WithValue(c.Request.Context(), "client", client)
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+			return
+		}
+		if s.authService == nil {
+			s.oauthChallenge(c, http.StatusUnauthorized, "invalid access token")
+			return
+		}
+		groupName := c.Param("name")
+		if _, err := s.toolGroupService.GetToolGroup(groupName); err != nil {
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "tool group not found"})
+			return
+		}
+		identity, err := s.authService.VerifyAccessToken(c.Request.Context(), token)
+		if err != nil {
+			if errors.Is(err, authn.ErrForbidden) {
+				s.oauthChallenge(c, http.StatusForbidden, "token is not authorized for this gateway")
+			} else {
+				s.oauthChallenge(c, http.StatusUnauthorized, "invalid access token")
+			}
+			return
+		}
+		if _, err := s.authService.BindHostedClient(c.Request.Context(), identity, groupName); err != nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "hosted client is bound to another tool group or has been revoked"})
+			return
+		}
+		allowList, _ := json.Marshal([]string{types.AllowAllMcpServers})
+		client := &model.McpClient{Name: "oauth:" + identity.ClientID, AllowList: datatypes.JSON(allowList)}
+		ctx = context.WithValue(c.Request.Context(), "client", client)
+		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
 }

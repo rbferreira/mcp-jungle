@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -314,4 +315,49 @@ func TestDeregisterServerHandler_NotFound(t *testing.T) {
 
 	testhelpers.AssertEqual(t, http.StatusNotFound, w.Code)
 	testhelpers.AssertStringContains(t, w.Body.String(), "not found")
+}
+
+func TestListServersHandlerRedactsStdioEnvironmentValues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setup := testhelpers.SetupTestDB(t)
+	defer setup.Cleanup()
+
+	serverRecord, err := model.NewStdioServer(
+		"secret-env-server",
+		"test",
+		"node",
+		[]string{"server.js"},
+		map[string]string{"API_TOKEN": "must-not-leak"},
+		types.SessionModeStateless,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setup.DB.Create(serverRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	mcpProxy := mcpserver.NewMCPServer("test", "0.0.1")
+	sseMcpProxy := mcpserver.NewMCPServer("test-sse", "0.0.1")
+	svc, err := mcpSvc.NewMCPService(&mcpSvc.ServiceConfig{
+		DB: setup.DB, McpProxyServer: mcpProxy, SseMcpProxyServer: sseMcpProxy,
+		Metrics: telemetry.NewNoopCustomMetrics(), McpServerInitReqTimeout: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.GET("/servers", (&Server{mcpService: svc}).listServersHandler())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/servers", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response []types.McpServer
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("invalid JSON response: %s", w.Body.String())
+	}
+	if len(response) != 1 || response[0].Env["API_TOKEN"] != "<redacted>" {
+		t.Fatalf("server response did not redact its environment: %s", w.Body.String())
+	}
 }

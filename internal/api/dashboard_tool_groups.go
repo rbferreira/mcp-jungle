@@ -164,7 +164,7 @@ func (s *Server) buildDashboardToolGroup(c *gin.Context, group model.ToolGroup) 
 		tools = append(tools, item)
 	}
 
-	endpoints := getToolGroupEndpoints(c, group.Name)
+	endpoints := s.getToolGroupEndpoints(c, group.Name)
 
 	return dashboardToolGroup{
 		Name:                   group.Name,

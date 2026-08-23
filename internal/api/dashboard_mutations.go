@@ -48,7 +48,7 @@ func (s *Server) dashboardRegisterServerHandler() gin.HandlerFunc {
 		err = s.mcpService.RegisterMcpServerWithOAuthSupport(c, &input, server, false, "dashboard")
 		if err != nil {
 			if errors.Is(err, apierrors.ErrUpstreamOAuthRequired) {
-				input.OAuthRedirectURI = requestBaseURL(c) + "/api/dashboard/oauth/callback"
+				input.OAuthRedirectURI = s.requestBaseURL(c) + "/api/dashboard/oauth/callback"
 				err = s.mcpService.RegisterMcpServerWithOAuthSupport(c, &input, server, false, "dashboard")
 			}
 		}

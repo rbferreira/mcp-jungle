@@ -4,9 +4,11 @@ package mcpclient
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/mcpjungle/mcpjungle/internal"
 	"github.com/mcpjungle/mcpjungle/internal/model"
+	"github.com/mcpjungle/mcpjungle/internal/security"
 	"github.com/mcpjungle/mcpjungle/pkg/apierrors"
 	"gorm.io/gorm"
 )
@@ -26,25 +28,29 @@ func (m *McpClientService) ListClients() ([]*model.McpClient, error) {
 	if err := m.db.Find(&clients).Error; err != nil {
 		return nil, err
 	}
+	for _, client := range clients {
+		client.AccessToken = ""
+	}
 	return clients, nil
 }
 
 // CreateClient creates a new MCP client in the database.
 // It also generates a new access token for the client.
 func (m *McpClientService) CreateClient(client model.McpClient) (*model.McpClient, error) {
+	var rawToken string
 	if client.AccessToken != "" {
 		// user has supplied a custom access token, validate it
 		if err := internal.ValidateAccessToken(client.AccessToken); err != nil {
 			return nil, fmt.Errorf("invalid access token: %v: %w", err, apierrors.ErrInvalidInput)
 		}
-		// todo: add audit log entry for custom token usage
+		rawToken = client.AccessToken
 	} else {
 		// no access token is provided by user, generate a new one
 		token, err := internal.GenerateAccessToken()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate access token: %w", err)
 		}
-		client.AccessToken = token
+		rawToken = token
 	}
 
 	// Initialize AllowList with empty array if not provided
@@ -52,9 +58,11 @@ func (m *McpClientService) CreateClient(client model.McpClient) (*model.McpClien
 		client.AllowList = []byte("[]")
 	}
 
+	client.AccessToken = security.HashToken(rawToken)
 	if err := m.db.Create(&client).Error; err != nil {
 		return nil, err
 	}
+	client.AccessToken = rawToken
 	return &client, nil
 }
 
@@ -62,12 +70,16 @@ func (m *McpClientService) CreateClient(client model.McpClient) (*model.McpClien
 // It returns an error if no such client is found.
 func (m *McpClientService) GetClientByToken(token string) (*model.McpClient, error) {
 	var client model.McpClient
-	if err := m.db.Where("access_token = ?", token).First(&client).Error; err != nil {
+	if err := m.db.Where("access_token IN ?", []string{security.HashToken(token), token}).First(&client).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("client not found: %w", apierrors.ErrNotFound)
 		}
 		return nil, err
 	}
+	client.AccessToken = ""
+	now := time.Now().UTC()
+	_ = m.db.Model(&model.McpClient{}).Where("id = ?", client.ID).UpdateColumn("last_seen_at", now).Error
+	client.LastSeenAt = &now
 	return &client, nil
 }
 
@@ -94,10 +106,21 @@ func (m *McpClientService) UpdateClient(updatedClient model.McpClient) (*model.M
 	}
 
 	// Update only the access token for now
-	client.AccessToken = updatedClient.AccessToken
+	rawToken := updatedClient.AccessToken
+	client.AccessToken = security.HashToken(rawToken)
 
 	if err := m.db.Save(&client).Error; err != nil {
 		return nil, err
 	}
+	client.AccessToken = rawToken
 	return &client, nil
+}
+
+// RotateClientToken generates and persists a replacement token, returning it once.
+func (m *McpClientService) RotateClientToken(name string) (*model.McpClient, error) {
+	token, err := internal.GenerateAccessToken()
+	if err != nil {
+		return nil, err
+	}
+	return m.UpdateClient(model.McpClient{Name: name, AccessToken: token})
 }

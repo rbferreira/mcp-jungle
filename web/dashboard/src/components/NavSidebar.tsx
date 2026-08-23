@@ -2,6 +2,7 @@ import type { AppSection } from "@/lib/types";
 
 const items: Array<{ key: AppSection; label: string }> = [
   { key: "servers", label: "Servers" },
+  { key: "connections", label: "Connections" },
   { key: "tools", label: "Tools" },
   { key: "tool_groups", label: "Tool Groups" },
   { key: "prompts", label: "Prompts" },
@@ -13,10 +14,14 @@ export function NavSidebar({
   active,
   onSelect,
   logoUrl,
+  onLogout,
+  showLogout,
 }: {
   active: AppSection;
   onSelect: (section: AppSection) => void;
   logoUrl: string;
+  onLogout: () => void;
+  showLogout: boolean;
 }) {
   return (
     <aside className="sidebar">
@@ -41,6 +46,11 @@ export function NavSidebar({
           </button>
         ))}
       </nav>
+      {showLogout ? (
+        <button className="sidebar-link" onClick={onLogout} type="button">
+          <span>Sign out</span>
+        </button>
+      ) : null}
       <a
         className="sidebar-link"
         href="https://github.com/mcpjungle/MCPJungle/issues"

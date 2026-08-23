@@ -9,9 +9,14 @@ Once your server is running, you can open this dashboard in your browser at [htt
 
 ![MCPJungle dashboard UI](/images/dashboard-ui.png)
 
-The Dashboard is currently only supported when running mcpjungle in [development mode](/core-concepts#development-mode-vs-enterprise-mode).
+In development mode the dashboard remains open for local use. In enterprise mode you must set `DASHBOARD_ENABLED=true` and configure Auth0. The enterprise dashboard uses Auth0 Universal Login and PostgreSQL-backed sessions.
+
+The **Connections** page manages both client types:
+
+- Static clients for local desktop and IDE tools. Copy a token when you create or rotate it because MCPJungle stores only its hash.
+- Hosted OAuth clients for ChatGPT and Claude. Each OAuth client is bound to one tool group and can be revoked independently.
 
 <Note>
-  Dashboard is currently a Beta feature. The CLI remains the most complete management interface today, and the Dashboard UI is also available for local/dev visibility and common management tasks.
+  Dashboard is currently a Beta feature. Keep the CLI available for bootstrap and recovery operations.
   Please report any issues or feedback you have.
 </Note>

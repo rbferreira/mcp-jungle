@@ -138,6 +138,52 @@ When the server starts it resolves the database connection in this order:
   ```
 </ParamField>
 
+## Enterprise security and Auth0
+
+<ParamField path="DASHBOARD_ENABLED" type="boolean" default="true (development) / false (enterprise)">
+  Enables dashboard routes. Enterprise mode requires Auth0 before the dashboard can start.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_PUBLIC_URL" type="string">
+  Canonical HTTPS URL for the gateway. Required in enterprise mode. MCPJungle uses this value for OAuth metadata, callbacks, and connector endpoints instead of trusting request host headers.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_ENCRYPTION_KEY" type="string">
+  Base64-encoded 32-byte AES-256-GCM key. Required in enterprise mode. Generate it with `openssl rand -base64 32`.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_BOOTSTRAP_TOKEN" type="string">
+  One-time token required by `mcpjungle init-server`. You may rotate or remove it after successful initialization.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_AUTH0_ISSUER" type="string">
+  Auth0 issuer URL, including the tenant domain.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_AUTH0_AUDIENCE" type="string">
+  Auth0 API identifier. Set this to the same canonical URL as `MCPJUNGLE_PUBLIC_URL`.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_ID" type="string">
+  Client ID for the environment's Auth0 Regular Web Application.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_AUTH0_DASHBOARD_CLIENT_SECRET" type="string">
+  Client secret for the environment's Auth0 Regular Web Application.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_AUTH0_ADMIN_SUBJECT" type="string">
+  Exact Auth0 `sub` claim for the sole dashboard operator. Other subjects are rejected.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_ID" type="string">
+  Optional Auth0 Management API Machine to Machine client ID used to delete revoked DCR clients.
+</ParamField>
+
+<ParamField path="MCPJUNGLE_AUTH0_MANAGEMENT_CLIENT_SECRET" type="string">
+  Secret for the Auth0 Management API client.
+</ParamField>
+
 ---
 
 ## Observability
@@ -227,4 +273,9 @@ When the server starts it resolves the database connection in this order:
 | `OTEL_ENABLED` | Observability | mode-dependent | Enable OpenTelemetry metrics. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Observability | — | Additional OTel resource attributes. |
 | `SESSION_IDLE_TIMEOUT_SEC` | Connections | `-1` | Idle timeout for stateful sessions. |
+| `DASHBOARD_ENABLED` | Security | mode-dependent | Enable local or Auth0-protected dashboard routes. |
+| `MCPJUNGLE_PUBLIC_URL` | Security | — | Canonical enterprise HTTPS URL. |
+| `MCPJUNGLE_ENCRYPTION_KEY` | Security | — | Base64 32-byte credential encryption key. |
+| `MCPJUNGLE_BOOTSTRAP_TOKEN` | Security | — | One-time enterprise initialization token. |
+| `MCPJUNGLE_AUTH0_*` | Security | — | Auth0 issuer, audience, application, operator, and Management API settings. |
 | `MCPJUNGLE_IMAGE_TAG` | Docker | `latest` | Docker image tag for Compose deployments. |

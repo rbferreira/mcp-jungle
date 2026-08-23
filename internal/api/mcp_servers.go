@@ -90,7 +90,7 @@ func (s *Server) registerServerHandler() gin.HandlerFunc {
 			URL:         input.URL,
 			Command:     input.Command,
 			Args:        input.Args,
-			Env:         input.Env,
+			Env:         redactedMap(input.Env),
 		}})
 	}
 }
@@ -142,7 +142,7 @@ func (s *Server) completeUpstreamOAuthSessionHandler() gin.HandlerFunc {
 			if confErr == nil {
 				resp.Command = conf.Command
 				resp.Args = conf.Args
-				resp.Env = conf.Env
+				resp.Env = redactedMap(conf.Env)
 			}
 		case types.TransportSSE:
 			conf, confErr := server.GetSSEConfig()
@@ -213,7 +213,7 @@ func (s *Server) listServersHandler() gin.HandlerFunc {
 				}
 				servers[i].Command = conf.Command
 				servers[i].Args = conf.Args
-				servers[i].Env = conf.Env
+				servers[i].Env = redactedMap(conf.Env)
 			default:
 				// transport is SSE
 				conf, err := record.GetSSEConfig()
@@ -273,9 +273,8 @@ func (s *Server) disableServerHandler() gin.HandlerFunc {
 }
 
 // getServerConfigsHandler returns the configurations of all registered MCP servers.
-// This is different from listServersHandler because it returns the complete configuration of each server
-// used to register them, including potentially sensitive information.
-// The configs can be used to register the servers again elsewhere.
+// This is different from listServersHandler because it returns registration
+// configuration, but stored credentials are always redacted.
 func (s *Server) getServerConfigsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		records, err := s.mcpService.ListMcpServers()
@@ -307,8 +306,7 @@ func (s *Server) getServerConfigsHandler() gin.HandlerFunc {
 					return
 				}
 				servers[i].URL = conf.URL
-				servers[i].BearerToken = conf.BearerToken
-				servers[i].Headers = conf.Headers
+				servers[i].Headers = redactedMap(conf.Headers)
 			case types.TransportStdio:
 				conf, err := record.GetStdioConfig()
 				if err != nil {
@@ -322,7 +320,7 @@ func (s *Server) getServerConfigsHandler() gin.HandlerFunc {
 				}
 				servers[i].Command = conf.Command
 				servers[i].Args = conf.Args
-				servers[i].Env = conf.Env
+				servers[i].Env = redactedMap(conf.Env)
 			default:
 				// transport is SSE
 				conf, err := record.GetSSEConfig()
@@ -336,13 +334,11 @@ func (s *Server) getServerConfigsHandler() gin.HandlerFunc {
 					return
 				}
 				servers[i].URL = conf.URL
-				servers[i].BearerToken = conf.BearerToken
 			}
 
 			if oauthToken, err := s.mcpService.GetUpstreamOAuthToken(record.Name); err == nil {
 				servers[i].OAuthRedirectURI = oauthToken.RedirectURI
 				servers[i].OAuthClientID = oauthToken.ClientID
-				servers[i].OAuthClientSecret = oauthToken.ClientSecret
 				scopes, scopeErr := mcp.ScopesFromJSONForAPI(oauthToken.Scopes)
 				if scopeErr == nil {
 					servers[i].OAuthScopes = scopes
@@ -352,6 +348,17 @@ func (s *Server) getServerConfigsHandler() gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, servers)
 	}
+}
+
+func redactedMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key := range values {
+		result[key] = "<redacted>"
+	}
+	return result
 }
 
 func createServerModelFromInput(input *types.RegisterServerInput) (*model.McpServer, error) {

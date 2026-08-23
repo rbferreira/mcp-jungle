@@ -38,7 +38,11 @@ You can enable enterprise mode in three ways:
 
 ## Initialize the server once
 
-After the first boot in enterprise mode, run `mcpjungle init-server` once from your client machine to create the initial admin identity and authenticate your CLI.
+After the first boot in enterprise mode, run `mcpjungle init-server` once from your client machine to create the initial admin identity and authenticate your CLI. Enterprise initialization requires the one-time bootstrap token:
+
+```bash
+mcpjungle init-server --bootstrap-token "$MCPJUNGLE_BOOTSTRAP_TOKEN"
+```
 
 For the exact bootstrap flow and command details, see:
 
@@ -49,7 +53,7 @@ For the exact bootstrap flow and command details, see:
 
 For a shared deployment, the recommended pattern is:
 
-1. Run the standard `ghcr.io/mcpjungle/mcpjungle:latest` image.
+1. Run the STDIO image when the gateway must launch `npx` or `uvx` servers. Use the minimal image for HTTP-only deployments.
 2. Keep the CLI installed separately on operator machines.
 3. Point Mcpjungle at a separate PostgreSQL instance or cluster.
 
@@ -104,6 +108,9 @@ docker stop mcpjungle-server
 ## What to read next
 
 <CardGroup cols={2}>
+  <Card title="DigitalOcean App Platform" icon="cloud" href="/deployment/digitalocean">
+    Deploy the staged Auth0 and PostgreSQL architecture.
+  </Card>
   <Card title="Database" icon="database" href="/deployment/database">
     Configure PostgreSQL correctly for production use.
   </Card>
