@@ -25,6 +25,8 @@ import { EmptyStateCard } from "@/components/EmptyStateCard";
 import { NavSidebar } from "@/components/NavSidebar";
 import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
+import { setTheme, applyTheme, onSystemThemeChange } from "@/lib/theme";
+import type { Theme } from "@/lib/theme";
 
 function TrashIcon() {
   return (
@@ -459,7 +461,7 @@ function createInitialToolGroupForm(): ToolGroupFormState {
   };
 }
 
-export default function App() {
+export default function App({ initialTheme }: { initialTheme: import("@/lib/theme").Theme }) {
   const [section, setSection] = useState<AppSection>("servers");
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState("");
@@ -484,6 +486,7 @@ export default function App() {
   const [toolGroupError, setToolGroupError] = useState("");
   const [busyKeys, setBusyKeys] = useState<Record<string, boolean>>({});
   const [issuedToken, setIssuedToken] = useState<{ name: string; token: string } | null>(null);
+  const [theme, setThemeState] = useState<import("@/lib/theme").Theme>(initialTheme);
 
   async function loadDashboardData(silent = false) {
     if (!silent) {
@@ -596,6 +599,17 @@ export default function App() {
   const overview = data.overview;
   const diagnostics = data.diagnostics;
   const currentSectionMeta = sectionMeta[section];
+
+  useEffect(() => {
+    if (theme !== "system") return;
+    return onSystemThemeChange(() => applyTheme("system"));
+  }, [theme]);
+
+  function handleThemeSelect(next: Theme) {
+    setThemeState(next);
+    setTheme(next);
+    applyTheme(next);
+  }
 
   function setBusy(key: string, value: boolean) {
     setBusyKeys((current) => {
@@ -980,7 +994,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <NavSidebar active={section} logoUrl={logoUrl} onLogout={() => void logout()} onSelect={setSection} showLogout={overview?.mode === "enterprise"} />
+      <NavSidebar active={section} logoUrl={logoUrl} onLogout={() => void logout()} onSelect={setSection} showLogout={overview?.mode === "enterprise"} theme={theme} onThemeSelect={handleThemeSelect} />
       <main className="main-shell">
         <header className="topbar">
           <div>
