@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import type { AppSection } from "@/lib/types";
 import type { Theme } from "@/lib/theme";
 
@@ -51,16 +50,6 @@ function MoonIcon() {
 const themeOrder: Theme[] = ["light", "system", "dark"];
 
 function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: Theme) => void }) {
-  const lightRef = useRef<HTMLButtonElement>(null);
-  const systemRef = useRef<HTMLButtonElement>(null);
-  const darkRef = useRef<HTMLButtonElement>(null);
-
-  const refs: Record<Theme, React.RefObject<HTMLButtonElement | null>> = {
-    light: lightRef,
-    system: systemRef,
-    dark: darkRef,
-  };
-
   function handleKeyDown(e: React.KeyboardEvent) {
     const index = themeOrder.indexOf(theme);
     let next: Theme | null = null;
@@ -75,7 +64,6 @@ function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: 
 
     if (next) {
       onSelect(next);
-      refs[next].current?.focus();
     }
   }
 
@@ -88,7 +76,6 @@ function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: 
     >
       <span className="theme-pill-toggle-knob" aria-hidden="true" />
       <button
-        ref={lightRef}
         type="button"
         className="theme-pill-toggle-option"
         onClick={() => onSelect("light")}
@@ -100,7 +87,6 @@ function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: 
         <SunIcon />
       </button>
       <button
-        ref={systemRef}
         type="button"
         className="theme-pill-toggle-option"
         onClick={() => onSelect("system")}
@@ -112,7 +98,6 @@ function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: 
         <MonitorIcon />
       </button>
       <button
-        ref={darkRef}
         type="button"
         className="theme-pill-toggle-option"
         onClick={() => onSelect("dark")}
