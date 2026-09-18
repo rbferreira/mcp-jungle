@@ -47,12 +47,32 @@ function MoonIcon() {
   );
 }
 
+const themeOrder: Theme[] = ["light", "system", "dark"];
+
 function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: Theme) => void }) {
+  function handleKeyDown(e: React.KeyboardEvent) {
+    const index = themeOrder.indexOf(theme);
+    let next: Theme | null = null;
+
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      next = themeOrder[(index + 1) % themeOrder.length];
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      next = themeOrder[(index - 1 + themeOrder.length) % themeOrder.length];
+    }
+
+    if (next) {
+      onSelect(next);
+    }
+  }
+
   return (
     <div
       className={`theme-pill-toggle theme-pill-toggle-${theme}`}
       role="radiogroup"
       aria-label="Theme selection"
+      onKeyDown={handleKeyDown}
     >
       <span className="theme-pill-toggle-knob" aria-hidden="true" />
       <button
@@ -62,6 +82,7 @@ function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: 
         aria-label="Light mode"
         role="radio"
         aria-checked={theme === "light"}
+        tabIndex={theme === "light" ? 0 : -1}
       >
         <SunIcon />
       </button>
@@ -72,6 +93,7 @@ function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: 
         aria-label="System theme"
         role="radio"
         aria-checked={theme === "system"}
+        tabIndex={theme === "system" ? 0 : -1}
       >
         <MonitorIcon />
       </button>
@@ -82,6 +104,7 @@ function ThemePillToggle({ theme, onSelect }: { theme: Theme; onSelect: (theme: 
         aria-label="Dark mode"
         role="radio"
         aria-checked={theme === "dark"}
+        tabIndex={theme === "dark" ? 0 : -1}
       >
         <MoonIcon />
       </button>

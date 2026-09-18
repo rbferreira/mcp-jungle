@@ -12,15 +12,23 @@ export function resolveTheme(theme: Theme): ResolvedTheme {
 }
 
 export function getInitialTheme(): Theme {
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === "light" || stored === "dark" || stored === "system") {
-    return stored;
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") {
+      return stored;
+    }
+  } catch {
+    // localStorage unavailable (private browsing, storage blocked)
   }
   return "system";
 }
 
 export function setTheme(theme: Theme): void {
-  localStorage.setItem(THEME_KEY, theme);
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // storage blocked — theme still applies, just won't persist
+  }
 }
 
 export function applyTheme(theme: Theme): void {
